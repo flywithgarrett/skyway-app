@@ -14,8 +14,8 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 1.6;
-const AIRCRAFT_SCALE_SELECTED = 3.0;
+const AIRCRAFT_SCALE = 0.55;
+const AIRCRAFT_SCALE_SELECTED = 1.0;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
 function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3 {
@@ -277,21 +277,30 @@ export default function Globe({
     scene.add(new THREE.AmbientLight(0x111122, 0.3));
 
     // Globe — high-res sphere with night earth texture
-    const globeGeo = new THREE.SphereGeometry(RADIUS, 128, 128);
+    const globeGeo = new THREE.SphereGeometry(RADIUS, 200, 200);
     const globeMat = new THREE.MeshBasicMaterial({ color: 0x050a14 });
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
+    // Load high-res 8k night earth first, fall back to lower-res
+    const configTexture = (texture: THREE.Texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+      globeMat.map = texture;
+      globeMat.color = new THREE.Color(1.6, 1.6, 1.6);
+      globeMat.needsUpdate = true;
+    };
     loader.load(
-      "https://unpkg.com/three-globe@2.31.1/example/img/earth-night.jpg",
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        texture.minFilter = THREE.LinearMipmapLinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.generateMipmaps = true;
-        globeMat.map = texture;
-        globeMat.color = new THREE.Color(1.6, 1.6, 1.6);
-        globeMat.needsUpdate = true;
+      "https://unpkg.com/three-globe@2.34.1/example/img/earth-night.jpg",
+      (tex) => {
+        configTexture(tex);
+        // Try loading 8k version for sharper zoom
+        loader.load(
+          "https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/dnb_land_ocean_ice.2012.3600x1800.jpg",
+          (hiRes) => configTexture(hiRes)
+        );
       }
     );
     const globe = new THREE.Mesh(globeGeo, globeMat);
@@ -341,8 +350,7 @@ export default function Globe({
     const airborne = flightsRef.current.filter(
       (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
-    // Larger hitbox for reliable click detection
-    const planeGeo = new THREE.BoxGeometry(1.8, 1.8, 0.01);
+    const planeGeo = new THREE.BoxGeometry(1, 1, 0.01);
     const planeMat = new THREE.MeshBasicMaterial({
       map: aircraftTexture, transparent: true, alphaTest: 0.02,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.NormalBlending,
@@ -368,7 +376,7 @@ export default function Globe({
     controls.dampingFactor = 0.06;
     controls.rotateSpeed = 0.35;
     controls.zoomSpeed = 0.6;
-    controls.minDistance = 115;
+    controls.minDistance = 105;
     controls.maxDistance = 400;
     controls.enablePan = false;
     controls.autoRotate = false;
@@ -386,11 +394,32 @@ export default function Globe({
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
+
+      // Try exact hit first, then expand with proximity search
       const intersects = raycaster.intersectObject(aircraftMesh);
       if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
         return intersects[0].instanceId;
       }
-      return null;
+
+      // Proximity click: find nearest plane within ~15px screen radius
+      const sd = sceneDataRef.current;
+      if (!sd) return null;
+      const count = Math.min(sd.airborneFlights.length, 4000);
+      let bestIdx: number | null = null;
+      let bestDist = 20; // max screen-space pixel distance
+      for (let i = 0; i < count; i++) {
+        const mat = new THREE.Matrix4();
+        sd.aircraftMesh.getMatrixAt(i, mat);
+        const pos = new THREE.Vector3().setFromMatrixPosition(mat);
+        pos.project(camera);
+        const sx = (pos.x * 0.5 + 0.5) * rect.width;
+        const sy = (-pos.y * 0.5 + 0.5) * rect.height;
+        const dx = e.clientX - rect.left - sx;
+        const dy = e.clientY - rect.top - sy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+      }
+      return bestIdx;
     };
 
     const onClick = (e: MouseEvent) => {
@@ -438,12 +467,11 @@ export default function Globe({
         sd.lastFrameTime = now;
         const flightCount = Math.min(sd.airborneFlights.length, 4000);
 
-        // Dynamic scale: planes shrink when zoomed out, grow when zoomed in
+        // Constant screen-size scaling: compensate for perspective zoom
+        // so planes look the same pixel size regardless of camera distance
         const camDist = camera.position.length();
-        // At distance 260 (default): scale = AIRCRAFT_SCALE (2.4)
-        // At distance 115 (min zoom): scale ~= 1.0 (smaller)
-        // At distance 400 (max zoom out): scale ~= 3.5 (visible dots)
-        const zoomScale = AIRCRAFT_SCALE * (260 / Math.max(camDist, 100)) * 0.85;
+        // Scale linearly with distance — farther = bigger world units to stay same screen px
+        const zoomScale = AIRCRAFT_SCALE * (camDist / 260);
 
         const KTS_TO_DEG_PER_SEC = 1 / (3600 * 60);
         for (let i = 0; i < flightCount; i++) {
@@ -455,11 +483,9 @@ export default function Globe({
             const cosLat = Math.cos(sd.drLats[i] * DEG2RAD);
             sd.drLngs[i] += Math.sin(hdgRad) * deltaDeg / (cosLat || 1);
           }
-          if (selectedRef.current?.id === f.id) {
-            sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, zoomScale * 1.8));
-          } else {
-            sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, zoomScale));
-          }
+          const isSelected = selectedRef.current?.id === f.id;
+          const s = isSelected ? zoomScale * 1.8 : zoomScale;
+          sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, s));
         }
         sd.aircraftMesh.instanceMatrix.needsUpdate = true;
       }
