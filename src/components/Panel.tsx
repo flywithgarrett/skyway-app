@@ -2,6 +2,7 @@
 
 import { Flight } from "@/lib/types";
 import { FlightDetail } from "@/lib/api";
+import { fmtAltitude, fmtHeading, fmtSpeed, fmtTime } from "@/lib/format";
 
 interface PanelProps {
   flight: Flight;
@@ -9,14 +10,6 @@ interface PanelProps {
   detailLoading: boolean;
   onClose: () => void;
   onViewDetails: (flight: Flight) => void;
-}
-
-function fmtTime(iso: string | null): string {
-  if (!iso) return "---";
-  try {
-    const d = new Date(iso);
-    return `${d.getUTCHours().toString().padStart(2, "0")}:${d.getUTCMinutes().toString().padStart(2, "0")}Z`;
-  } catch { return "---"; }
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -36,20 +29,41 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function Pill({ label }: { label: string }) {
+  return (
+    <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-medium"
+      style={{ background: "rgba(0,229,255,0.06)", color: "rgba(0,229,255,0.5)", border: "1px solid rgba(0,229,255,0.08)" }}>
+      {label}
+    </span>
+  );
+}
+
+// Weight class heuristic from ICAO aircraft designator
+function guessWeightClass(ac: string | null): string | null {
+  if (!ac) return null;
+  const heavy = ["B744", "B748", "B772", "B773", "B77L", "B77W", "B788", "B789", "B78X", "A332", "A333", "A338", "A339", "A342", "A343", "A345", "A346", "A359", "A35K", "A380", "A388"];
+  const medium = ["B737", "B738", "B739", "B38M", "B39M", "A319", "A320", "A20N", "A321", "A21N", "B752", "B753", "E170", "E175", "E190", "E195", "CRJ7", "CRJ9", "CRJX"];
+  const upper = ac.toUpperCase().slice(0, 4);
+  if (heavy.some((h) => upper.startsWith(h.slice(0, 3)))) return "Heavy";
+  if (ac.toUpperCase().startsWith("A38")) return "Super";
+  if (medium.some((m) => upper.startsWith(m.slice(0, 3)))) return "Medium";
+  return null;
+}
+
 export default function Panel({ flight, detail, detailLoading, onClose, onViewDetails }: PanelProps) {
-  // The flight prop is already enriched with FlightAware data by HomeClient
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
   const progressPercent = flight.progress || 0;
   const depTime = flight.actualDep || flight.scheduledDep;
   const arrTime = flight.estimatedArr || flight.scheduledArr;
-  const aircraft = flight.aircraft || "---";
-  const routeDistance = flight.routeDistance;
+  const aircraft = flight.aircraft || detail?.aircraftType || null;
+  const registration = flight.registration || detail?.registration || null;
+  const weightClass = guessWeightClass(aircraft);
 
   return (
     <div className="absolute bottom-14 left-0 right-0 sm:left-auto sm:right-4 sm:bottom-16 sm:w-80 z-30">
       <div className="mx-2 sm:mx-0 overflow-hidden glass-panel">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <div className="flex items-center justify-between px-4 pt-4 pb-1">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-bold tracking-wide"
               style={{ background: `linear-gradient(135deg, ${flight.airline.color}, ${flight.airline.color}88)`, color: "#fff", boxShadow: `0 2px 8px ${flight.airline.color}30` }}>
@@ -68,6 +82,13 @@ export default function Panel({ flight, detail, detailLoading, onClose, onViewDe
               </svg>
             </button>
           </div>
+        </div>
+
+        {/* Pill tags */}
+        <div className="px-4 pb-2 flex flex-wrap gap-1">
+          {registration && <Pill label={registration} />}
+          {aircraft && <Pill label={aircraft} />}
+          {weightClass && <Pill label={weightClass} />}
         </div>
 
         {/* Route */}
@@ -127,13 +148,13 @@ export default function Panel({ flight, detail, detailLoading, onClose, onViewDe
           </div>
         )}
 
-        {/* Details grid */}
+        {/* Details grid — aviation formatting */}
         <div className="px-4 pb-3">
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { label: "Aircraft", value: aircraft },
-              { label: "Altitude", value: flight.altitude > 0 ? `${(flight.altitude / 1000).toFixed(1)}k ft` : "---" },
-              { label: "Speed", value: flight.speed > 0 ? `${flight.speed} kts` : "---" },
+              { label: "Altitude", value: fmtAltitude(flight.altitude) },
+              { label: "Speed", value: fmtSpeed(flight.speed) },
+              { label: "Heading", value: fmtHeading(flight.heading) },
             ].map((item) => (
               <div key={item.label} className="rounded-xl px-2 py-2 text-center glass-detail">
                 <div className="text-[9px] uppercase tracking-widest mb-0.5 text-white/20">{item.label}</div>
@@ -141,8 +162,8 @@ export default function Panel({ flight, detail, detailLoading, onClose, onViewDe
               </div>
             ))}
           </div>
-          {routeDistance && (
-            <div className="mt-1.5 text-center text-[9px] text-white/20 font-mono">{routeDistance} nm</div>
+          {flight.routeDistance && (
+            <div className="mt-1.5 text-center text-[9px] text-white/20 font-mono">{flight.routeDistance} nm</div>
           )}
         </div>
 

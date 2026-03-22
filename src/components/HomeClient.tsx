@@ -6,6 +6,7 @@ import MapLoader from "@/components/MapLoader";
 import TopBar from "@/components/TopBar";
 import BottomNav from "@/components/BottomNav";
 import Panel from "@/components/Panel";
+import FlightListSidebar from "@/components/FlightListSidebar";
 import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
 import PlaceholderView from "@/components/PlaceholderView";
@@ -49,7 +50,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   // Fetch FlightAware premium data for the selected flight
   const { detail, loading: detailLoading } = useFlightDetails(selectedFlight?.callsign || null);
 
-  // Merge FlightAware premium data into the selected flight for the Globe's jetstream
+  // Merge FlightAware premium data into the selected flight for Globe jetstream
   const enrichedSelectedFlight = useMemo(() => {
     if (!selectedFlight) return null;
     if (!detail) return selectedFlight;
@@ -85,14 +86,17 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
     };
   }, [selectedFlight, detail]);
 
-  const enRouteCount = flights.length;
-
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
     if (tab !== "map") {
       setSelectedFlight(null);
       setDetailFlight(null);
     }
+  };
+
+  const handleSidebarSelect = (flight: Flight) => {
+    setSelectedFlight(flight);
+    setActiveTab("map");
   };
 
   return (
@@ -136,10 +140,19 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
 
       <TopBar
         totalFlights={flights.length}
-        enRouteCount={enRouteCount}
+        enRouteCount={flights.length}
         onSearchOpen={() => setSearchOpen(true)}
         selectedFlight={enrichedSelectedFlight}
       />
+
+      {/* Left sidebar — flight list */}
+      {activeTab === "map" && (
+        <FlightListSidebar
+          flights={flights}
+          selectedFlightId={selectedFlight?.id || null}
+          onSelectFlight={handleSidebarSelect}
+        />
+      )}
 
       {activeTab === "map" && enrichedSelectedFlight && !detailFlight && (
         <Panel
@@ -154,6 +167,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       {detailFlight && (
         <FlightDetailPanel
           flight={detailFlight}
+          detail={detail}
           onClose={() => setDetailFlight(null)}
         />
       )}

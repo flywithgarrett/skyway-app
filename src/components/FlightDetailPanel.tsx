@@ -1,18 +1,13 @@
 "use client";
 
 import { Flight } from "@/lib/types";
+import { FlightDetail } from "@/lib/api";
+import { fmtAltitude, fmtHeading, fmtSpeed, fmtTime } from "@/lib/format";
 
 interface FlightDetailPanelProps {
   flight: Flight;
+  detail: FlightDetail | null;
   onClose: () => void;
-}
-
-function fmtTime(iso: string | null): string {
-  if (!iso) return "---";
-  try {
-    const d = new Date(iso);
-    return `${d.getUTCHours().toString().padStart(2, "0")}:${d.getUTCMinutes().toString().padStart(2, "0")}Z`;
-  } catch { return "---"; }
 }
 
 function StatusIndicator({ status }: { status: string }) {
@@ -47,9 +42,36 @@ function DataCell({ label, value, mono, cyan }: { label: string; value: string; 
   );
 }
 
-export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanelProps) {
+function Pill({ label, color }: { label: string; color?: string }) {
+  return (
+    <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-medium"
+      style={{
+        background: color ? `${color}10` : "rgba(0,229,255,0.06)",
+        color: color || "rgba(0,229,255,0.6)",
+        border: `1px solid ${color ? `${color}20` : "rgba(0,229,255,0.1)"}`,
+      }}>
+      {label}
+    </span>
+  );
+}
+
+function guessWeightClass(ac: string | null): string | null {
+  if (!ac) return null;
+  const upper = ac.toUpperCase();
+  if (upper.startsWith("A38")) return "Super";
+  const heavy = ["B74", "B77", "B78", "A33", "A34", "A35"];
+  if (heavy.some((h) => upper.startsWith(h))) return "Heavy";
+  const medium = ["B73", "B75", "A31", "A32", "A21", "E17", "E19", "CRJ"];
+  if (medium.some((m) => upper.startsWith(m))) return "Medium";
+  return "Light";
+}
+
+export default function FlightDetailPanel({ flight, detail, onClose }: FlightDetailPanelProps) {
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
   const progressPercent = Math.round(flight.progress);
+  const aircraft = flight.aircraft || detail?.aircraftType || null;
+  const registration = flight.registration || detail?.registration || null;
+  const weightClass = guessWeightClass(aircraft);
 
   return (
     <div className="detail-panel-slide fixed top-0 right-0 bottom-0 z-40 w-full sm:w-96 md:w-[420px] flex flex-col">
@@ -58,7 +80,7 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
       <div className="flex-1 flex flex-col overflow-hidden glass-detail-panel">
         {/* Header */}
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.04]">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-[11px] font-bold tracking-wide"
                 style={{ background: `linear-gradient(135deg, ${flight.airline.color}, ${flight.airline.color}88)`, color: "#fff", boxShadow: `0 4px 12px ${flight.airline.color}30` }}>
@@ -75,7 +97,16 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
               </svg>
             </button>
           </div>
-          <StatusIndicator status={flight.status} />
+
+          {/* Status + Pill tags */}
+          <div className="flex items-center justify-between">
+            <StatusIndicator status={flight.status} />
+            <div className="flex flex-wrap gap-1">
+              {registration && <Pill label={registration} />}
+              {aircraft && <Pill label={aircraft} />}
+              {weightClass && <Pill label={weightClass} color={weightClass === "Super" || weightClass === "Heavy" ? "#f97316" : undefined} />}
+            </div>
+          </div>
         </div>
 
         {/* Scrollable content */}
@@ -91,6 +122,11 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
                   <div className="text-2xl font-bold text-glow-white">{flight.origin.code}</div>
                   <div className="text-[10px] text-white/25 mt-0.5">{flight.origin.city}</div>
                   {flight.origin.name && <div className="text-[10px] text-white/15 mt-0.5">{flight.origin.name}</div>}
+                  {detail?.origin?.gate && (
+                    <div className="text-[9px] font-mono text-cyan-400/40 mt-1">
+                      Gate {detail.origin.terminal ? `${detail.origin.terminal}/` : ""}{detail.origin.gate}
+                    </div>
+                  )}
                   <div className="mt-2 border-t border-white/[0.04] pt-2">
                     <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Dep</div>
                     <div className="text-[12px] font-mono text-white/40">{fmtTime(flight.scheduledDep)}</div>
@@ -130,6 +166,11 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
                   <div className="text-2xl font-bold text-glow-white">{flight.destination.code}</div>
                   <div className="text-[10px] text-white/25 mt-0.5">{flight.destination.city}</div>
                   {flight.destination.name && <div className="text-[10px] text-white/15 mt-0.5">{flight.destination.name}</div>}
+                  {detail?.destination?.gate && (
+                    <div className="text-[9px] font-mono text-cyan-400/40 mt-1">
+                      Gate {detail.destination.terminal ? `${detail.destination.terminal}/` : ""}{detail.destination.gate}
+                    </div>
+                  )}
                   <div className="mt-2 border-t border-white/[0.04] pt-2">
                     <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Arr</div>
                     <div className="text-[12px] font-mono text-white/40">{fmtTime(flight.scheduledArr)}</div>
@@ -155,10 +196,12 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
             <div className="grid grid-cols-2 gap-1.5">
               <DataCell label="Latitude" value={`${flight.currentLat.toFixed(4)}°`} mono />
               <DataCell label="Longitude" value={`${flight.currentLng.toFixed(4)}°`} mono />
-              <DataCell label="Altitude" value={flight.altitude > 0 ? `${(flight.altitude / 1000).toFixed(1)}k ft` : "---"} mono />
-              <DataCell label="Flight Level" value={flight.altitude > 0 ? `FL${Math.round(flight.altitude / 100)}` : "---"} mono />
-              <DataCell label="Ground Speed" value={flight.speed > 0 ? `${flight.speed} kts` : "---"} mono />
-              <DataCell label="Heading" value={flight.heading > 0 ? `${Math.round(flight.heading)}°` : "---"} mono />
+              <DataCell label="Altitude" value={fmtAltitude(flight.altitude)} mono />
+              <DataCell label="Ground Speed" value={fmtSpeed(flight.speed)} mono />
+              <DataCell label="Heading" value={fmtHeading(flight.heading)} mono />
+              {flight.verticalRate != null && (
+                <DataCell label="Vert Rate" value={`${flight.verticalRate > 0 ? "+" : ""}${flight.verticalRate} fpm`} mono />
+              )}
             </div>
           </section>
 
@@ -166,14 +209,40 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
           <section>
             <SectionLabel>Aircraft</SectionLabel>
             <div className="grid grid-cols-2 gap-1.5">
-              <DataCell label="Aircraft Type" value={flight.aircraft || "---"} mono />
-              <DataCell label="Registration" value={flight.registration || "---"} mono />
+              <DataCell label="Aircraft Type" value={aircraft || "---"} mono />
+              <DataCell label="Registration" value={registration || "---"} mono />
               <DataCell label="Callsign" value={flight.callsign || "---"} mono />
               {flight.routeDistance && (
                 <DataCell label="Route Distance" value={`${flight.routeDistance.toLocaleString()} nm`} mono />
               )}
             </div>
           </section>
+
+          {/* Filed Flight Plan */}
+          {detail?.waypoints && (
+            <section>
+              <SectionLabel>Filed Flight Plan</SectionLabel>
+              <div className="glass-detail rounded-xl px-3 py-3">
+                {(detail.filedAirspeed || detail.filedAltitude) && (
+                  <div className="flex gap-3 mb-2">
+                    {detail.filedAltitude && (
+                      <span className="text-[9px] font-mono text-white/30">
+                        Alt: <span className="text-white/50">{fmtAltitude(detail.filedAltitude)}</span>
+                      </span>
+                    )}
+                    {detail.filedAirspeed && (
+                      <span className="text-[9px] font-mono text-white/30">
+                        Spd: <span className="text-white/50">{detail.filedAirspeed} kts</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="text-[10px] font-mono text-white/40 leading-relaxed break-all">
+                  {detail.waypoints}
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Data source */}
           <section>

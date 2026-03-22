@@ -88,6 +88,9 @@ export async function GET(request: Request) {
       actualArr: active.actual_in || active.actual_on || null,
       progress: active.progress_percent || 0,
       routeDistance: active.route_distance ? Math.round(active.route_distance) : null,
+      waypoints: active.route || null,
+      filedAirspeed: active.filed_airspeed || null,
+      filedAltitude: active.filed_altitude || null,
     };
 
     return Response.json(detail);

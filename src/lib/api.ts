@@ -77,6 +77,9 @@ export interface FlightDetail {
   actualArr: string | null;
   progress: number;
   routeDistance: number | null;
+  waypoints: string | null;
+  filedAirspeed: number | null;
+  filedAltitude: number | null;
 }
 
 export function useFlightDetails(callsign: string | null) {
