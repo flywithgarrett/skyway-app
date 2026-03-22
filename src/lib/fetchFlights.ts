@@ -95,11 +95,15 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
   }
 
   try {
-    console.log("[SkyWay] Fetching FlightAware AeroAPI v4 (airborne flights)...");
+    console.log("[SkyWay] Fetching FlightAware AeroAPI v4 (commercial airliners)...");
 
     // -inAir 1 = currently airborne only
+    // -aboveAlt 200 = above FL200 (20,000 ft) — filters out GA/helicopters
+    // -belowAlt 600 = reasonable ceiling
+    // -latlong "24 -130 50 -60" = North America bounding box
     // max_pages=1 limits to a single page of results
-    const url = `${FA_BASE}/flights/search?query=-inAir 1&max_pages=1`;
+    const query = "-inAir 1 -aboveAlt 200 -belowAlt 600 -latlong \"24 -130 50 -60\"";
+    const url = `${FA_BASE}/flights/search?query=${encodeURIComponent(query)}&max_pages=1`;
     const res = await fetch(url, {
       headers: faHeaders(),
       signal: AbortSignal.timeout(15000),
@@ -132,7 +136,11 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
     for (const f of rawFlights) {
       if (flights.length >= MAX_FLIGHTS) break;
       const mapped = transformFlight(f);
-      if (mapped && !mapped.onGround) flights.push(mapped);
+      if (!mapped || mapped.onGround) continue;
+      // Skip GA: require 3-letter ICAO airline prefix (e.g., UAL, DAL, AAL)
+      const cs = mapped.callsign;
+      if (!cs || cs.length < 4 || !/^[A-Z]{3}/.test(cs)) continue;
+      flights.push(mapped);
     }
 
     console.log(`[SkyWay] ${flights.length} airborne flights (capped at ${MAX_FLIGHTS})`);
