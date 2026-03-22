@@ -113,11 +113,11 @@ function createAircraftTexture(): THREE.Texture {
   ctx.imageSmoothingQuality = "high";
   const cx = size / 2, cy = size / 2;
 
-  // Subtle radial glow — not overpowering
-  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.45);
-  g1.addColorStop(0, "rgba(0, 229, 255, 0.10)");
-  g1.addColorStop(0.2, "rgba(0, 229, 255, 0.03)");
-  g1.addColorStop(1, "rgba(0, 229, 255, 0)");
+  // Minimal radial glow — clean Apple-style
+  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.35);
+  g1.addColorStop(0, "rgba(255, 255, 255, 0.04)");
+  g1.addColorStop(0.3, "rgba(0, 229, 255, 0.01)");
+  g1.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = g1;
   ctx.fillRect(0, 0, size, size);
 
@@ -171,16 +171,16 @@ function createAircraftTexture(): THREE.Texture {
     ctx.fill();
   };
 
-  // Single pass: subtle cyan glow + solid cyan fill
-  ctx.shadowColor = "rgba(0, 229, 255, 0.45)";
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = "rgba(0, 229, 255, 0.75)";
+  // Clean pass: crisp white plane with subtle cyan edge glow
+  ctx.shadowColor = "rgba(0, 229, 255, 0.25)";
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = "rgba(220, 240, 255, 0.85)";
   drawPrecisePlane();
 
-  // Second pass: brighter core, less glow
-  ctx.shadowColor = "rgba(0, 229, 255, 0.2)";
-  ctx.shadowBlur = 3;
-  ctx.fillStyle = "rgba(0, 229, 255, 0.9)";
+  // Second pass: bright white core, no glow
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
   drawPrecisePlane();
 
   ctx.restore();
@@ -302,8 +302,8 @@ export default function Globe({
     scene.add(createStars());
     scene.add(new THREE.AmbientLight(0x111122, 0.3));
 
-    // Globe
-    const globeGeo = new THREE.SphereGeometry(RADIUS, 96, 96);
+    // Globe — high-res sphere with night earth texture
+    const globeGeo = new THREE.SphereGeometry(RADIUS, 128, 128);
     const globeMat = new THREE.MeshBasicMaterial({ color: 0x050a14 });
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
@@ -316,21 +316,7 @@ export default function Globe({
         texture.magFilter = THREE.LinearFilter;
         texture.generateMipmaps = true;
         globeMat.map = texture;
-        globeMat.color = new THREE.Color(1.4, 1.4, 1.4);
-        globeMat.needsUpdate = true;
-      }
-    );
-    // Load high-res texture in background, swap when ready
-    loader.load(
-      "https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg",
-      (hiRes) => {
-        hiRes.colorSpace = THREE.SRGBColorSpace;
-        hiRes.anisotropy = renderer.capabilities.getMaxAnisotropy();
-        hiRes.minFilter = THREE.LinearMipmapLinearFilter;
-        hiRes.magFilter = THREE.LinearFilter;
-        hiRes.generateMipmaps = true;
-        globeMat.map = hiRes;
-        globeMat.color = new THREE.Color(0.55, 0.55, 0.65);
+        globeMat.color = new THREE.Color(1.6, 1.6, 1.6);
         globeMat.needsUpdate = true;
       }
     );
@@ -366,8 +352,8 @@ export default function Globe({
     // BoxGeometry with tiny depth for reliable raycasting from all camera angles
     const planeGeo = new THREE.BoxGeometry(1, 1, 0.01);
     const planeMat = new THREE.MeshBasicMaterial({
-      map: aircraftTexture, transparent: true, alphaTest: 0.01,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+      map: aircraftTexture, transparent: true, alphaTest: 0.05,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.NormalBlending,
     });
     const aircraftMesh = new THREE.InstancedMesh(planeGeo, planeMat, MAX_FLIGHTS);
     aircraftMesh.frustumCulled = false;
@@ -452,31 +438,38 @@ export default function Globe({
         controls.update();
       }
 
-      // Dead reckoning: advance aircraft positions between API updates
+      // Dead reckoning + dynamic zoom scaling
       const sd = sceneDataRef.current;
       if (sd) {
         const now = performance.now();
-        const dtSec = Math.min((now - sd.lastFrameTime) / 1000, 0.1); // cap at 100ms
+        const dtSec = Math.min((now - sd.lastFrameTime) / 1000, 0.1);
         sd.lastFrameTime = now;
         const flightCount = Math.min(sd.airborneFlights.length, 4000);
-        // 1 knot = 1 nautical mile/hour = 1/3600 nm/sec
-        // 1 nm = 1/60 degree of latitude
+
+        // Dynamic scale: planes shrink when zoomed out, grow when zoomed in
+        const camDist = camera.position.length();
+        // At distance 260 (default): scale = AIRCRAFT_SCALE (2.4)
+        // At distance 115 (min zoom): scale ~= 1.0 (smaller)
+        // At distance 400 (max zoom out): scale ~= 3.5 (visible dots)
+        const zoomScale = AIRCRAFT_SCALE * (260 / Math.max(camDist, 100)) * 0.85;
+
         const KTS_TO_DEG_PER_SEC = 1 / (3600 * 60);
-        let needsMatrixUpdate = false;
         for (let i = 0; i < flightCount; i++) {
           const f = sd.airborneFlights[i];
-          if (f.speed <= 0) continue;
           const hdgRad = f.heading * DEG2RAD;
-          const deltaDeg = f.speed * KTS_TO_DEG_PER_SEC * dtSec;
-          sd.drLats[i] += Math.cos(hdgRad) * deltaDeg;
-          // Longitude correction for latitude
-          const cosLat = Math.cos(sd.drLats[i] * DEG2RAD);
-          sd.drLngs[i] += Math.sin(hdgRad) * deltaDeg / (cosLat || 1);
-          if (selectedRef.current?.id === f.id) continue; // skip selected — handled by selection effect
-          sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
-          needsMatrixUpdate = true;
+          if (f.speed > 0) {
+            const deltaDeg = f.speed * KTS_TO_DEG_PER_SEC * dtSec;
+            sd.drLats[i] += Math.cos(hdgRad) * deltaDeg;
+            const cosLat = Math.cos(sd.drLats[i] * DEG2RAD);
+            sd.drLngs[i] += Math.sin(hdgRad) * deltaDeg / (cosLat || 1);
+          }
+          if (selectedRef.current?.id === f.id) {
+            sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, zoomScale * 1.8));
+          } else {
+            sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, zoomScale));
+          }
         }
-        if (needsMatrixUpdate) sd.aircraftMesh.instanceMatrix.needsUpdate = true;
+        sd.aircraftMesh.instanceMatrix.needsUpdate = true;
       }
 
       // Update jetstream shader time
@@ -587,34 +580,29 @@ export default function Globe({
 
     const { aircraftMesh, airborneFlights, instanceColors } = data;
 
+    const count = Math.min(airborneFlights.length, 4000);
+
     if (!selectedFlight) {
-      // Reset all aircraft to full brightness and normal scale
-      const count = Math.min(airborneFlights.length, 12000);
+      // Reset all aircraft to full brightness — scaling handled by animation loop
       for (let i = 0; i < count; i++) {
         instanceColors[i * 3] = 1; instanceColors[i * 3 + 1] = 1; instanceColors[i * 3 + 2] = 1;
-        const f = airborneFlights[i];
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
       }
       if (aircraftMesh.instanceColor) (aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
-      aircraftMesh.instanceMatrix.needsUpdate = true;
       return;
     }
 
     const selectedIdx = airborneFlights.findIndex((f) => f.id === selectedFlight.id);
-    const count = Math.min(airborneFlights.length, 12000);
 
     for (let i = 0; i < count; i++) {
-      const f = airborneFlights[i];
       if (i === selectedIdx) {
-        instanceColors[i * 3] = 1.6; instanceColors[i * 3 + 1] = 1.6; instanceColors[i * 3 + 2] = 1.6;
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE_SELECTED));
+        // Bright white selected aircraft
+        instanceColors[i * 3] = 2.0; instanceColors[i * 3 + 1] = 2.0; instanceColors[i * 3 + 2] = 2.0;
       } else {
-        instanceColors[i * 3] = 0.18; instanceColors[i * 3 + 1] = 0.18; instanceColors[i * 3 + 2] = 0.22;
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+        // Dim unselected — subtle visibility
+        instanceColors[i * 3] = 0.15; instanceColors[i * 3 + 1] = 0.15; instanceColors[i * 3 + 2] = 0.2;
       }
     }
     if (aircraftMesh.instanceColor) (aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
-    aircraftMesh.instanceMatrix.needsUpdate = true;
 
     // Jetstream route arc: Origin → Aircraft → Destination
     // Use airport coords if available (non-zero), otherwise skip that segment
