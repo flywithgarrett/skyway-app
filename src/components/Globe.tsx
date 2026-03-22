@@ -14,8 +14,8 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 5.0;
-const AIRCRAFT_SCALE_SELECTED = 8.0;
+const AIRCRAFT_SCALE = 3.2;
+const AIRCRAFT_SCALE_SELECTED = 5.0;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
 function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3 {
@@ -113,88 +113,75 @@ function createAircraftTexture(): THREE.Texture {
   ctx.imageSmoothingQuality = "high";
   const cx = size / 2, cy = size / 2;
 
-  // Multi-layer glow halo
-  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.48);
-  g1.addColorStop(0, "rgba(0, 229, 255, 0.18)");
-  g1.addColorStop(0.15, "rgba(0, 229, 255, 0.08)");
-  g1.addColorStop(0.4, "rgba(0, 229, 255, 0.02)");
+  // Subtle radial glow — not overpowering
+  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.45);
+  g1.addColorStop(0, "rgba(0, 229, 255, 0.10)");
+  g1.addColorStop(0.2, "rgba(0, 229, 255, 0.03)");
   g1.addColorStop(1, "rgba(0, 229, 255, 0)");
   ctx.fillStyle = g1;
   ctx.fillRect(0, 0, size, size);
 
   ctx.save();
   ctx.translate(cx, cy);
-  const s = size * 0.17;
 
-  // Draw aircraft silhouette with multiple passes for anti-aliased glow
-  const drawPlane = () => {
-    // Fuselage — smooth tapered body
-    ctx.beginPath();
-    ctx.moveTo(0, -s * 1.8);
-    ctx.quadraticCurveTo(s * 0.22, -s * 1.2, s * 0.2, -s * 0.6);
-    ctx.lineTo(s * 0.2, s * 0.3);
-    ctx.quadraticCurveTo(s * 0.18, s * 1.2, s * 0.1, s * 1.6);
-    ctx.lineTo(-s * 0.1, s * 1.6);
-    ctx.quadraticCurveTo(-s * 0.18, s * 1.2, -s * 0.2, s * 0.3);
-    ctx.lineTo(-s * 0.2, -s * 0.6);
-    ctx.quadraticCurveTo(-s * 0.22, -s * 1.2, 0, -s * 1.8);
-    ctx.closePath();
-    ctx.fill();
+  // Precise Boeing 787 / A350 top-down SVG-quality silhouette
+  // Scale: nose at -s*2.0, tail at s*1.6, wingspan ±s*1.7
+  const s = size * 0.14;
 
-    // Right wing — swept
+  const drawPrecisePlane = () => {
     ctx.beginPath();
-    ctx.moveTo(s * 0.18, -s * 0.1);
-    ctx.quadraticCurveTo(s * 0.8, s * 0.15, s * 1.55, s * 0.5);
-    ctx.lineTo(s * 1.55, s * 0.7);
-    ctx.quadraticCurveTo(s * 0.8, s * 0.35, s * 0.2, s * 0.2);
-    ctx.closePath();
-    ctx.fill();
-
-    // Left wing — swept
-    ctx.beginPath();
-    ctx.moveTo(-s * 0.18, -s * 0.1);
-    ctx.quadraticCurveTo(-s * 0.8, s * 0.15, -s * 1.55, s * 0.5);
-    ctx.lineTo(-s * 1.55, s * 0.7);
-    ctx.quadraticCurveTo(-s * 0.8, s * 0.35, -s * 0.2, s * 0.2);
-    ctx.closePath();
-    ctx.fill();
-
-    // Right tail
-    ctx.beginPath();
-    ctx.moveTo(s * 0.1, s * 1.15);
-    ctx.quadraticCurveTo(s * 0.35, s * 1.3, s * 0.55, s * 1.5);
-    ctx.lineTo(s * 0.55, s * 1.65);
-    ctx.quadraticCurveTo(s * 0.3, s * 1.5, s * 0.12, s * 1.4);
-    ctx.closePath();
-    ctx.fill();
-
-    // Left tail
-    ctx.beginPath();
-    ctx.moveTo(-s * 0.1, s * 1.15);
-    ctx.quadraticCurveTo(-s * 0.35, s * 1.3, -s * 0.55, s * 1.5);
-    ctx.lineTo(-s * 0.55, s * 1.65);
-    ctx.quadraticCurveTo(-s * 0.3, s * 1.5, -s * 0.12, s * 1.4);
+    // Nose cone — sharp pointed
+    ctx.moveTo(0, -s * 2.0);
+    // Right fuselage
+    ctx.bezierCurveTo(s * 0.08, -s * 1.7, s * 0.14, -s * 1.0, s * 0.14, -s * 0.3);
+    // Right wing root leading edge
+    ctx.lineTo(s * 0.16, -s * 0.15);
+    // Right wing tip — long swept
+    ctx.bezierCurveTo(s * 0.5, -s * 0.05, s * 1.2, s * 0.25, s * 1.7, s * 0.45);
+    // Right wing trailing edge
+    ctx.lineTo(s * 1.65, s * 0.55);
+    ctx.bezierCurveTo(s * 1.1, s * 0.4, s * 0.5, s * 0.2, s * 0.16, s * 0.15);
+    // Right fuselage continues aft
+    ctx.lineTo(s * 0.14, s * 1.0);
+    // Right horizontal stabilizer
+    ctx.lineTo(s * 0.13, s * 1.15);
+    ctx.bezierCurveTo(s * 0.3, s * 1.2, s * 0.55, s * 1.35, s * 0.6, s * 1.45);
+    ctx.lineTo(s * 0.58, s * 1.52);
+    ctx.bezierCurveTo(s * 0.4, s * 1.45, s * 0.2, s * 1.35, s * 0.1, s * 1.3);
+    // Tail cone
+    ctx.lineTo(s * 0.06, s * 1.6);
+    ctx.lineTo(-s * 0.06, s * 1.6);
+    // Left horizontal stabilizer
+    ctx.lineTo(-s * 0.1, s * 1.3);
+    ctx.bezierCurveTo(-s * 0.2, s * 1.35, -s * 0.4, s * 1.45, -s * 0.58, s * 1.52);
+    ctx.lineTo(-s * 0.6, s * 1.45);
+    ctx.bezierCurveTo(-s * 0.55, s * 1.35, -s * 0.3, s * 1.2, -s * 0.13, s * 1.15);
+    ctx.lineTo(-s * 0.14, s * 1.0);
+    // Left fuselage
+    ctx.lineTo(-s * 0.16, s * 0.15);
+    // Left wing trailing edge
+    ctx.bezierCurveTo(-s * 0.5, s * 0.2, -s * 1.1, s * 0.4, -s * 1.65, s * 0.55);
+    ctx.lineTo(-s * 1.7, s * 0.45);
+    // Left wing leading edge
+    ctx.bezierCurveTo(-s * 1.2, s * 0.25, -s * 0.5, -s * 0.05, -s * 0.16, -s * 0.15);
+    ctx.lineTo(-s * 0.14, -s * 0.3);
+    // Left fuselage to nose
+    ctx.bezierCurveTo(-s * 0.14, -s * 1.0, -s * 0.08, -s * 1.7, 0, -s * 2.0);
     ctx.closePath();
     ctx.fill();
   };
 
-  // Pass 1: outer cyan glow
-  ctx.shadowColor = "rgba(0, 229, 255, 0.5)";
-  ctx.shadowBlur = 16;
-  ctx.fillStyle = "rgba(0, 229, 255, 0.3)";
-  drawPlane();
+  // Single pass: subtle cyan glow + solid cyan fill
+  ctx.shadowColor = "rgba(0, 229, 255, 0.45)";
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = "rgba(0, 229, 255, 0.75)";
+  drawPrecisePlane();
 
-  // Pass 2: inner glow
-  ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
-  ctx.shadowBlur = 8;
-  ctx.fillStyle = "rgba(180, 240, 255, 0.7)";
-  drawPlane();
-
-  // Pass 3: bright core
-  ctx.shadowColor = "rgba(255, 255, 255, 0.4)";
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
-  drawPlane();
+  // Second pass: brighter core, less glow
+  ctx.shadowColor = "rgba(0, 229, 255, 0.2)";
+  ctx.shadowBlur = 3;
+  ctx.fillStyle = "rgba(0, 229, 255, 0.9)";
+  drawPrecisePlane();
 
   ctx.restore();
 
@@ -567,32 +554,48 @@ export default function Globe({
     if (aircraftMesh.instanceColor) (aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
     aircraftMesh.instanceMatrix.needsUpdate = true;
 
-    // Jetstream route arc (only if origin and destination are known)
-    const hasRoute = selectedFlight.origin.code !== "---" && selectedFlight.destination.code !== "---";
-    if (hasRoute) {
-      const arcPoints = greatCirclePoints(
-        selectedFlight.origin.lat, selectedFlight.origin.lng,
-        selectedFlight.destination.lat, selectedFlight.destination.lng,
-        100, 6
-      );
-      if (arcPoints.length > 2) {
-        const curve = new THREE.CatmullRomCurve3(arcPoints, false, "catmullrom", 0.5);
-        const tubeGeo = new THREE.TubeGeometry(curve, 120, 0.35, 8, false);
-        const tubeMat = new THREE.ShaderMaterial({
-          vertexShader: jetstreamVertex, fragmentShader: jetstreamFragment,
-          transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-          side: THREE.DoubleSide,
-          uniforms: { uTime: { value: data.clock.getElapsedTime() } },
-        });
-        const jetstream = new THREE.Mesh(tubeGeo, tubeMat);
-        data.scene.add(jetstream);
-        data.jetstream = jetstream;
-        data.jetstreamMat = tubeMat;
-      }
+    // Jetstream route arc: Origin → Aircraft → Destination
+    // Use airport coords if available (non-zero), otherwise skip that segment
+    const origLat = selectedFlight.origin.lat;
+    const origLng = selectedFlight.origin.lng;
+    const destLat = selectedFlight.destination.lat;
+    const destLng = selectedFlight.destination.lng;
+    const acLat = selectedFlight.currentLat;
+    const acLng = selectedFlight.currentLng;
+    const hasOrig = origLat !== 0 || origLng !== 0;
+    const hasDest = destLat !== 0 || destLng !== 0;
+
+    const allArcPoints: THREE.Vector3[] = [];
+
+    // Segment 1: Origin → Aircraft (if origin coords valid)
+    if (hasOrig) {
+      allArcPoints.push(...greatCirclePoints(origLat, origLng, acLat, acLng, 50, 4));
+    }
+    // Segment 2: Aircraft → Destination (if dest coords valid)
+    if (hasDest) {
+      const seg2 = greatCirclePoints(acLat, acLng, destLat, destLng, 50, 4);
+      // Skip first point to avoid duplicate at aircraft position
+      if (allArcPoints.length > 0 && seg2.length > 0) seg2.shift();
+      allArcPoints.push(...seg2);
+    }
+
+    if (allArcPoints.length > 3) {
+      const curve = new THREE.CatmullRomCurve3(allArcPoints, false, "catmullrom", 0.5);
+      const tubeGeo = new THREE.TubeGeometry(curve, 120, 0.3, 8, false);
+      const tubeMat = new THREE.ShaderMaterial({
+        vertexShader: jetstreamVertex, fragmentShader: jetstreamFragment,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+        side: THREE.DoubleSide,
+        uniforms: { uTime: { value: data.clock.getElapsedTime() } },
+      });
+      const jetstream = new THREE.Mesh(tubeGeo, tubeMat);
+      data.scene.add(jetstream);
+      data.jetstream = jetstream;
+      data.jetstreamMat = tubeMat;
     }
 
     // Cinematic camera: center on the aircraft position
-    const camCenter = latLngTo3D(selectedFlight.currentLat, selectedFlight.currentLng, 1).normalize();
+    const camCenter = latLngTo3D(acLat, acLng, 1).normalize();
     const camTarget = camCenter.multiplyScalar(175);
     cameraAnimRef.current = { targetPos: camTarget };
 
