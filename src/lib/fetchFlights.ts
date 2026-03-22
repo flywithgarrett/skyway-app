@@ -99,10 +99,14 @@ function transformADSBxAircraft(ac: any): Flight | null {
 
 interface FetchResult { flights: Flight[]; source: string }
 
+// Minimum viable flight count — if a source returns fewer, try the next one
+const MIN_FLIGHTS = 500;
+
 // Tier 1: Global state-vector endpoints (OpenSky format)
+// ADSB.lol first (better global coverage), OpenSky as backup
 const GLOBAL_SOURCES = [
-  { name: "opensky", url: "https://opensky-network.org/api/states/all" },
   { name: "adsb.lol", url: "https://api.adsb.lol/v2/states/all" },
+  { name: "opensky", url: "https://opensky-network.org/api/states/all" },
 ];
 
 async function fetchGlobalSource(source: { name: string; url: string }): Promise<FetchResult> {
@@ -122,20 +126,27 @@ async function fetchGlobalSource(source: { name: string; url: string }): Promise
     if (!mapped || mapped.altitude < 1000) continue;
     flights.push(mapped);
   }
+  if (flights.length < MIN_FLIGHTS) {
+    throw new Error(`Only ${flights.length} flights (below ${MIN_FLIGHTS} threshold)`);
+  }
   return { flights, source: source.name };
 }
 
 // Tier 2: ADSBx v2 point queries (airplanes.live) — covers major global regions
 // Each point query covers a 250nm radius circle. We pick strategic centers for density.
 const POINT_REGIONS = [
-  { lat: 40, lon: -80, label: "US-East" },     // NYC/ATL/MIA corridor
-  { lat: 38, lon: -105, label: "US-West" },     // DEN/LAX/SFO
-  { lat: 50, lon: -2, label: "Europe-W" },      // LHR/CDG/AMS
-  { lat: 48, lon: 12, label: "Europe-C" },       // FRA/MUC
-  { lat: 25, lon: 55, label: "Middle-East" },   // DXB/DOH
-  { lat: 35, lon: 140, label: "East-Asia" },    // HND/ICN
-  { lat: 1, lon: 104, label: "SE-Asia" },       // SIN
-  { lat: 45, lon: -30, label: "N-Atlantic" },   // Oceanic tracks
+  { lat: 40, lon: -75, label: "US-NE" },        // NYC corridor
+  { lat: 33, lon: -84, label: "US-SE" },         // ATL/MIA
+  { lat: 40, lon: -100, label: "US-Central" },   // ORD/DEN
+  { lat: 35, lon: -118, label: "US-West" },      // LAX/SFO
+  { lat: 51, lon: -1, label: "UK" },             // LHR
+  { lat: 49, lon: 8, label: "Europe-C" },        // FRA/CDG/AMS
+  { lat: 40, lon: 25, label: "Europe-E" },       // IST/Mediterranean
+  { lat: 25, lon: 55, label: "Middle-East" },    // DXB/DOH
+  { lat: 35, lon: 140, label: "East-Asia" },     // HND/ICN
+  { lat: 1, lon: 104, label: "SE-Asia" },        // SIN
+  { lat: 45, lon: -30, label: "N-Atlantic" },    // Oceanic tracks
+  { lat: -25, lon: -46, label: "S-America" },    // GRU
 ];
 
 async function fetchAirplanesLive(): Promise<FetchResult> {

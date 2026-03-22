@@ -294,7 +294,7 @@ export default function Globe({
       antialias: true, alpha: false, powerPreference: "high-performance",
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
@@ -312,8 +312,25 @@ export default function Globe({
       (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = true;
         globeMat.map = texture;
         globeMat.color = new THREE.Color(1.4, 1.4, 1.4);
+        globeMat.needsUpdate = true;
+      }
+    );
+    // Load high-res texture in background, swap when ready
+    loader.load(
+      "https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg",
+      (hiRes) => {
+        hiRes.colorSpace = THREE.SRGBColorSpace;
+        hiRes.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        hiRes.minFilter = THREE.LinearMipmapLinearFilter;
+        hiRes.magFilter = THREE.LinearFilter;
+        hiRes.generateMipmaps = true;
+        globeMat.map = hiRes;
+        globeMat.color = new THREE.Color(0.55, 0.55, 0.65);
         globeMat.needsUpdate = true;
       }
     );
@@ -330,10 +347,10 @@ export default function Globe({
     // Airport markers
     const airportGroup = new THREE.Group();
     scene.add(airportGroup);
-    const mGeo = new THREE.SphereGeometry(0.6, 16, 16);
+    const mGeo = new THREE.SphereGeometry(0.3, 12, 12);
     const mMat = new THREE.MeshBasicMaterial({ color: 0x3bb8e8 });
-    const gGeo = new THREE.SphereGeometry(1.6, 16, 16);
-    const gMat = new THREE.MeshBasicMaterial({ color: 0x3bb8e8, transparent: true, opacity: 0.12 });
+    const gGeo = new THREE.SphereGeometry(0.8, 12, 12);
+    const gMat = new THREE.MeshBasicMaterial({ color: 0x3bb8e8, transparent: true, opacity: 0.10 });
     airportsRef.current.forEach((a) => {
       const p = latLngTo3D(a.lat, a.lng, RADIUS * 1.003);
       const m = new THREE.Mesh(mGeo, mMat); m.position.copy(p); airportGroup.add(m);
@@ -378,9 +395,9 @@ export default function Globe({
     controls.enablePan = false;
     controls.autoRotate = false;
 
-    // Cinematic intro — animate to show global density (NA, Atlantic, Europe)
-    const globalTarget = latLngTo3D(35, -40, 1).normalize().multiplyScalar(320);
-    cameraAnimRef.current = { targetPos: globalTarget };
+    // Cinematic intro — sweep from Pacific to center on US
+    const usTarget = latLngTo3D(39, -98, 1).normalize().multiplyScalar(260);
+    cameraAnimRef.current = { targetPos: usTarget };
 
     // Click + hover handling with raycaster
     const raycaster = new THREE.Raycaster();
@@ -653,11 +670,11 @@ export default function Globe({
         {airports.map((airport) => (
           <div
             key={airport.code}
-            className="absolute text-[9px] font-mono tracking-wider font-medium"
+            className="absolute text-[11px] font-mono tracking-wider font-semibold"
             style={{
-              color: "rgba(130, 195, 220, 0.8)",
-              textShadow: "0 0 4px rgba(59, 184, 232, 0.25), 0 1px 3px rgba(0,0,0,0.9)",
-              transform: "translate(-50%, 6px)", whiteSpace: "nowrap", letterSpacing: "0.08em",
+              color: "rgba(150, 210, 235, 0.9)",
+              textShadow: "0 0 6px rgba(59, 184, 232, 0.35), 0 1px 4px rgba(0,0,0,0.95)",
+              transform: "translate(-50%, 4px)", whiteSpace: "nowrap", letterSpacing: "0.1em",
             }}
           >
             {airport.code}
