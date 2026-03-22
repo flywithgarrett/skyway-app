@@ -40,7 +40,7 @@ interface HomeClientProps {
 }
 
 export default function HomeClient({ initialFlights }: HomeClientProps) {
-  const { flights } = useLiveFlights(10000, initialFlights);
+  const { flights, error: apiError } = useLiveFlights(10000, initialFlights);
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -64,6 +64,36 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         selectedFlight={selectedFlight}
         onSelectFlight={setSelectedFlight}
       />
+
+      {apiError && (
+        <div
+          style={{
+            position: "absolute",
+            top: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            maxWidth: 560,
+            width: "90%",
+            padding: "14px 20px",
+            borderRadius: 10,
+            background: "rgba(20, 8, 8, 0.92)",
+            border: "1px solid rgba(255, 60, 60, 0.35)",
+            backdropFilter: "blur(16px)",
+            color: "#ff6b6b",
+            fontSize: 13,
+            fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
+            lineHeight: 1.5,
+            boxShadow: "0 4px 24px rgba(0,0,0,0.5), 0 0 12px rgba(255,60,60,0.08)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 16, lineHeight: "20px", flexShrink: 0 }}>&#9888;</span>
+          <span style={{ opacity: 0.95 }}>{apiError}</span>
+        </div>
+      )}
 
       <TopBar
         totalFlights={flights.length}

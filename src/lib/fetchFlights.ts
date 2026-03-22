@@ -80,7 +80,7 @@ function transformFlight(f: any): Flight | null {
 
 // --- Main fetch function (NO mock data — empty array on failure) ---
 
-export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: string }> {
+export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: string; error?: string }> {
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
     return { flights: cache.data, source: "cache" };
   }
@@ -109,11 +109,17 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
       if (res.status === 403) console.error("[SkyWay] CAUSE: API key lacks permission for this endpoint.");
       if (res.status === 429) console.error("[SkyWay] CAUSE: Rate limit exceeded. Cache TTL may be too aggressive.");
 
+      const reason = res.status === 401 ? "Unauthorized — Check API Key"
+        : res.status === 403 ? "Forbidden — API key lacks permission"
+        : res.status === 429 ? "Rate Limited — Too many requests"
+        : `${res.statusText || "Unknown error"}`;
+      const errorMsg = `FlightAware API Error: ${res.status} ${reason}`;
+
       if (cache) {
         console.warn("[SkyWay] Returning stale cache from previous successful fetch.");
         return { flights: cache.data, source: "stale-cache" };
       }
-      return { flights: [], source: `error:http-${res.status}` };
+      return { flights: [], source: `error:http-${res.status}`, error: errorMsg };
     }
 
     const json = await res.json();
@@ -137,6 +143,6 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
       console.warn("[SkyWay] Returning stale cache after network error.");
       return { flights: cache.data, source: "stale-cache" };
     }
-    return { flights: [], source: `error:${err instanceof Error ? err.message : "unknown"}` };
+    return { flights: [], source: `error:network`, error: `Network Error: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
