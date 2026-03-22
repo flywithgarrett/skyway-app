@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import MapLoader from "@/components/MapLoader";
 import TopBar from "@/components/TopBar";
@@ -10,7 +10,7 @@ import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
 import PlaceholderView from "@/components/PlaceholderView";
 import { airports } from "@/lib/data";
-import { useLiveFlights } from "@/lib/api";
+import { useLiveFlights, useFlightDetails } from "@/lib/api";
 import { Flight } from "@/lib/types";
 
 const FlightDetailPanel = dynamic(() => import("@/components/FlightDetailPanel"), { ssr: false });
@@ -46,6 +46,45 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
 
+  // Fetch FlightAware premium data for the selected flight
+  const { detail, loading: detailLoading } = useFlightDetails(selectedFlight?.callsign || null);
+
+  // Merge FlightAware premium data into the selected flight for the Globe's jetstream
+  const enrichedSelectedFlight = useMemo(() => {
+    if (!selectedFlight) return null;
+    if (!detail) return selectedFlight;
+    return {
+      ...selectedFlight,
+      aircraft: detail.aircraftType || selectedFlight.aircraft,
+      registration: detail.registration || selectedFlight.registration,
+      scheduledDep: detail.scheduledDep || selectedFlight.scheduledDep,
+      actualDep: detail.actualDep || selectedFlight.actualDep,
+      scheduledArr: detail.scheduledArr || selectedFlight.scheduledArr,
+      estimatedArr: detail.estimatedArr || selectedFlight.estimatedArr,
+      actualArr: detail.actualArr || selectedFlight.actualArr,
+      progress: detail.progress || selectedFlight.progress,
+      routeDistance: detail.routeDistance || selectedFlight.routeDistance,
+      origin: detail.origin ? {
+        code: detail.origin.code,
+        icao: detail.origin.icao,
+        name: detail.origin.name,
+        city: detail.origin.city,
+        country: selectedFlight.origin.country,
+        lat: detail.origin.lat,
+        lng: detail.origin.lng,
+      } : selectedFlight.origin,
+      destination: detail.destination ? {
+        code: detail.destination.code,
+        icao: detail.destination.icao,
+        name: detail.destination.name,
+        city: detail.destination.city,
+        country: selectedFlight.destination.country,
+        lat: detail.destination.lat,
+        lng: detail.destination.lng,
+      } : selectedFlight.destination,
+    };
+  }, [selectedFlight, detail]);
+
   const enRouteCount = flights.length;
 
   const handleTabChange = (tab: Tab) => {
@@ -61,7 +100,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       <MapLoader
         flights={flights}
         airports={airports}
-        selectedFlight={selectedFlight}
+        selectedFlight={enrichedSelectedFlight}
         onSelectFlight={setSelectedFlight}
       />
 
@@ -99,12 +138,14 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         totalFlights={flights.length}
         enRouteCount={enRouteCount}
         onSearchOpen={() => setSearchOpen(true)}
-        selectedFlight={selectedFlight}
+        selectedFlight={enrichedSelectedFlight}
       />
 
-      {activeTab === "map" && selectedFlight && !detailFlight && (
+      {activeTab === "map" && enrichedSelectedFlight && !detailFlight && (
         <Panel
-          flight={selectedFlight}
+          flight={enrichedSelectedFlight}
+          detail={detail}
+          detailLoading={detailLoading}
           onClose={() => setSelectedFlight(null)}
           onViewDetails={(f) => setDetailFlight(f)}
         />

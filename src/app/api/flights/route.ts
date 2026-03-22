@@ -1,18 +1,6 @@
 import { fetchLiveFlights } from "@/lib/fetchFlights";
 
 export async function GET() {
-  const apiKey = process.env.FLIGHTAWARE_API_KEY;
-  if (!apiKey) {
-    return Response.json(
-      {
-        flights: [],
-        source: "error",
-        error: "API Key Missing in Environment Variables — set FLIGHTAWARE_API_KEY in Vercel project settings.",
-      },
-      { status: 400 }
-    );
-  }
-
   const { flights, source, error } = await fetchLiveFlights();
 
   if (error) {

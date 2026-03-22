@@ -1,9 +1,12 @@
 "use client";
 
 import { Flight } from "@/lib/types";
+import { FlightDetail } from "@/lib/api";
 
 interface PanelProps {
   flight: Flight;
+  detail: FlightDetail | null;
+  detailLoading: boolean;
   onClose: () => void;
   onViewDetails: (flight: Flight) => void;
 }
@@ -33,9 +36,14 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
+export default function Panel({ flight, detail, detailLoading, onClose, onViewDetails }: PanelProps) {
+  // The flight prop is already enriched with FlightAware data by HomeClient
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
-  const progressPercent = Math.round(flight.progress);
+  const progressPercent = flight.progress || 0;
+  const depTime = flight.actualDep || flight.scheduledDep;
+  const arrTime = flight.estimatedArr || flight.scheduledArr;
+  const aircraft = flight.aircraft || "---";
+  const routeDistance = flight.routeDistance;
 
   return (
     <div className="absolute bottom-14 left-0 right-0 sm:left-auto sm:right-4 sm:bottom-16 sm:w-80 z-30">
@@ -64,12 +72,16 @@ export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
 
         {/* Route */}
         <div className="px-4 py-3">
-          {hasRoute ? (
+          {detailLoading && !detail && !hasRoute ? (
+            <div className="text-center py-2">
+              <div className="text-[10px] uppercase tracking-widest text-cyan-400/40 animate-pulse">Loading route data...</div>
+            </div>
+          ) : hasRoute ? (
             <div className="flex items-center justify-between">
               <div className="text-center">
                 <div className="text-xl font-bold text-glow-white">{flight.origin.code}</div>
                 <div className="text-[10px] text-white/25 mt-0.5">{flight.origin.city}</div>
-                <div className="text-[10px] font-mono mt-1 text-glow-cyan">{fmtTime(flight.actualDep || flight.scheduledDep)}</div>
+                <div className="text-[10px] font-mono mt-1 text-glow-cyan">{fmtTime(depTime)}</div>
               </div>
               <div className="flex-1 mx-4">
                 {progressPercent > 0 ? (
@@ -85,7 +97,7 @@ export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
                         </div>
                       </div>
                     </div>
-                    <div className="text-center text-[10px] mt-2 text-white/25 font-mono">{progressPercent}%</div>
+                    <div className="text-center text-[10px] mt-2 text-white/25 font-mono">{Math.round(progressPercent)}%</div>
                   </>
                 ) : (
                   <div className="text-center text-white/15 text-[10px]">→</div>
@@ -94,7 +106,7 @@ export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
               <div className="text-center">
                 <div className="text-xl font-bold text-glow-white">{flight.destination.code}</div>
                 <div className="text-[10px] text-white/25 mt-0.5">{flight.destination.city}</div>
-                <div className="text-[10px] font-mono mt-1 text-glow-cyan">{fmtTime(flight.estimatedArr || flight.scheduledArr)}</div>
+                <div className="text-[10px] font-mono mt-1 text-glow-cyan">{fmtTime(arrTime)}</div>
               </div>
             </div>
           ) : (
@@ -105,11 +117,21 @@ export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
           )}
         </div>
 
+        {/* Gate info from FlightAware */}
+        {detail && (detail.origin?.gate || detail.destination?.gate) && (
+          <div className="px-4 pb-2">
+            <div className="flex justify-between text-[9px] font-mono text-white/30">
+              {detail.origin?.gate && <span>Gate {detail.origin.terminal ? `${detail.origin.terminal}/` : ""}{detail.origin.gate}</span>}
+              {detail.destination?.gate && <span>Gate {detail.destination.terminal ? `${detail.destination.terminal}/` : ""}{detail.destination.gate}</span>}
+            </div>
+          </div>
+        )}
+
         {/* Details grid */}
         <div className="px-4 pb-3">
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { label: "Aircraft", value: flight.aircraft || "---" },
+              { label: "Aircraft", value: aircraft },
               { label: "Altitude", value: flight.altitude > 0 ? `${(flight.altitude / 1000).toFixed(1)}k ft` : "---" },
               { label: "Speed", value: flight.speed > 0 ? `${flight.speed} kts` : "---" },
             ].map((item) => (
@@ -119,6 +141,9 @@ export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
               </div>
             ))}
           </div>
+          {routeDistance && (
+            <div className="mt-1.5 text-center text-[9px] text-white/20 font-mono">{routeDistance} nm</div>
+          )}
         </div>
 
         <div className="px-4 pb-4">

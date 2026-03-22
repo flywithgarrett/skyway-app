@@ -53,3 +53,71 @@ export function useLiveFlights(intervalMs: number = 10000, initialFlights: Fligh
 
   return { flights, source, error };
 }
+
+// --- FlightAware premium detail enrichment (on-demand per click) ---
+
+export interface FlightDetail {
+  ident: string;
+  operator: string | null;
+  aircraftType: string | null;
+  registration: string | null;
+  status: string | null;
+  origin: {
+    code: string; icao: string; name: string; city: string;
+    lat: number; lng: number; gate: string | null; terminal: string | null;
+  } | null;
+  destination: {
+    code: string; icao: string; name: string; city: string;
+    lat: number; lng: number; gate: string | null; terminal: string | null;
+  } | null;
+  scheduledDep: string | null;
+  actualDep: string | null;
+  scheduledArr: string | null;
+  estimatedArr: string | null;
+  actualArr: string | null;
+  progress: number;
+  routeDistance: number | null;
+}
+
+export function useFlightDetails(callsign: string | null) {
+  const [detail, setDetail] = useState<FlightDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!callsign) {
+      setDetail(null);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/flight-details?callsign=${encodeURIComponent(callsign)}`)
+      .then(async (res) => {
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.error) {
+          setError(json.error);
+          setDetail(null);
+        } else {
+          setDetail(json as FlightDetail);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [callsign]);
+
+  return { detail, loading, error };
+}
