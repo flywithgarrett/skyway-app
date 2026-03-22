@@ -7,7 +7,7 @@ const CACHE_TTL = 60000;
 
 const MAX_FLIGHTS = 4000;
 
-// ADSB.lol state vector indices (OpenSky-compatible format)
+// OpenSky / ADSB.lol state vector indices
 // [0] icao24, [1] callsign, [2] origin_country, [3] time_position,
 // [4] last_contact, [5] longitude, [6] latitude, [7] baro_altitude,
 // [8] on_ground, [9] velocity, [10] true_track, [11] vertical_rate,
@@ -61,7 +61,44 @@ function transformStateVector(sv: any[]): Flight | null {
   };
 }
 
-// --- Main fetch: ADSB.lol global firehose ---
+// --- Data sources: cascade through available ADS-B aggregators ---
+
+interface RawResult { states: unknown[][]; source: string }
+
+const SOURCES = [
+  { name: "opensky", url: "https://opensky-network.org/api/states/all" },
+  { name: "adsb.lol", url: "https://api.adsb.lol/v2/states/all" },
+];
+
+async function fetchFromSource(source: { name: string; url: string }): Promise<RawResult> {
+  const res = await fetch(source.url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  }
+  const json = await res.json();
+  // Both OpenSky and ADSB.lol use { states: [...] }
+  const states: unknown[][] = json.states || [];
+  return { states, source: source.name };
+}
+
+async function fetchWithCascade(): Promise<RawResult> {
+  for (const source of SOURCES) {
+    try {
+      console.log(`[SkyWay] Trying ${source.name}...`);
+      const result = await fetchFromSource(source);
+      console.log(`[SkyWay] ${source.name} returned ${result.states.length} state vectors`);
+      return result;
+    } catch (err) {
+      console.warn(`[SkyWay] ${source.name} failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  throw new Error("All ADS-B data sources unavailable");
+}
+
+// --- Main fetch ---
 
 export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: string; error?: string }> {
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
@@ -69,28 +106,7 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
   }
 
   try {
-    console.log("[SkyWay] Fetching ADSB.lol global state vectors...");
-
-    const res = await fetch("https://api.adsb.lol/v2/states/all", {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(20000),
-    });
-
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error(`[SkyWay] ADSB.lol FAILED — HTTP ${res.status} ${res.statusText}`);
-      console.error(`[SkyWay] Response body: ${body.substring(0, 500)}`);
-
-      if (cache) {
-        console.warn("[SkyWay] Returning stale cache.");
-        return { flights: cache.data, source: "stale-cache" };
-      }
-      return { flights: [], source: `error:http-${res.status}`, error: `ADSB.lol API Error: ${res.status} ${res.statusText}` };
-    }
-
-    const json = await res.json();
-    const states: unknown[][] = json.states || [];
-    console.log(`[SkyWay] ADSB.lol returned ${states.length} state vectors`);
+    const { states, source } = await fetchWithCascade();
 
     const flights: Flight[] = [];
     for (const sv of states) {
@@ -102,17 +118,17 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
       flights.push(mapped);
     }
 
-    console.log(`[SkyWay] ${flights.length} airborne flights (capped at ${MAX_FLIGHTS})`);
+    console.log(`[SkyWay] ${flights.length} airborne flights from ${source} (capped at ${MAX_FLIGHTS})`);
 
     cache = { data: flights, timestamp: Date.now() };
-    return { flights, source: "adsb.lol" };
+    return { flights, source };
   } catch (err) {
-    console.error("[SkyWay] ADSB.lol network error:", err instanceof Error ? err.message : String(err));
+    console.error("[SkyWay] All sources failed:", err instanceof Error ? err.message : String(err));
 
     if (cache) {
-      console.warn("[SkyWay] Returning stale cache after network error.");
+      console.warn("[SkyWay] Returning stale cache after all sources failed.");
       return { flights: cache.data, source: "stale-cache" };
     }
-    return { flights: [], source: "error:network", error: `Network Error: ${err instanceof Error ? err.message : String(err)}` };
+    return { flights: [], source: "error:network", error: `All ADS-B sources unavailable. ${err instanceof Error ? err.message : String(err)}` };
   }
 }
