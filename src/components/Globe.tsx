@@ -25,35 +25,122 @@ function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3
   );
 }
 
+// Subtle, realistic starfield — small, dim, non-distracting
 function createStars(): THREE.Points {
-  const count = 8000;
+  const count = 4000;
   const positions = new Float32Array(count * 3);
-  const sizes = new Float32Array(count);
+  const colors = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    const r = 600 + Math.random() * 600;
+    const r = 800 + Math.random() * 800;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i * 3 + 2] = r * Math.cos(phi);
-    sizes[i] = 0.3 + Math.random() * 1.2;
+    // Slight color variation — warm/cool white
+    const temp = 0.7 + Math.random() * 0.3;
+    colors[i * 3] = temp;
+    colors[i * 3 + 1] = temp * (0.9 + Math.random() * 0.1);
+    colors[i * 3 + 2] = temp * (0.95 + Math.random() * 0.1);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute("size", new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   return new THREE.Points(
     geo,
     new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 1.2,
+      size: 0.6,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.5,
+      vertexColors: true,
+      depthWrite: false,
     })
   );
 }
 
-const atmosphereVertexShader = `
+// Create a high-quality airplane silhouette sprite texture
+function createAircraftTexture(): THREE.Texture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  // Outer glow
+  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
+  glowGrad.addColorStop(0, "rgba(0, 229, 255, 0.25)");
+  glowGrad.addColorStop(0.3, "rgba(0, 229, 255, 0.08)");
+  glowGrad.addColorStop(1, "rgba(0, 229, 255, 0)");
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Draw sleek aircraft silhouette (top-down view, pointing up)
+  ctx.save();
+  ctx.translate(cx, cy);
+  const s = size * 0.18; // scale factor
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+  ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
+  ctx.shadowBlur = 8;
+
+  ctx.beginPath();
+  // Fuselage — sleek tapered body
+  ctx.moveTo(0, -s * 1.7);       // nose
+  ctx.lineTo(s * 0.18, -s * 0.8);
+  ctx.lineTo(s * 0.18, s * 0.2);
+  ctx.lineTo(s * 0.12, s * 1.5);  // tail
+  ctx.lineTo(-s * 0.12, s * 1.5);
+  ctx.lineTo(-s * 0.18, s * 0.2);
+  ctx.lineTo(-s * 0.18, -s * 0.8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Wings — swept back
+  ctx.beginPath();
+  ctx.moveTo(s * 0.15, -s * 0.15);
+  ctx.lineTo(s * 1.5, s * 0.5);
+  ctx.lineTo(s * 1.5, s * 0.65);
+  ctx.lineTo(s * 0.18, s * 0.15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.15, -s * 0.15);
+  ctx.lineTo(-s * 1.5, s * 0.5);
+  ctx.lineTo(-s * 1.5, s * 0.65);
+  ctx.lineTo(-s * 0.18, s * 0.15);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tail fins
+  ctx.beginPath();
+  ctx.moveTo(s * 0.1, s * 1.1);
+  ctx.lineTo(s * 0.55, s * 1.5);
+  ctx.lineTo(s * 0.55, s * 1.6);
+  ctx.lineTo(s * 0.12, s * 1.35);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.1, s * 1.1);
+  ctx.lineTo(-s * 0.55, s * 1.5);
+  ctx.lineTo(-s * 0.55, s * 1.6);
+  ctx.lineTo(-s * 0.12, s * 1.35);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// Subtle atmospheric edge glow — realistic, not cartoony
+const edgeGlowVertex = `
   varying vec3 vNormal;
   varying vec3 vViewDir;
   void main() {
@@ -64,35 +151,18 @@ const atmosphereVertexShader = `
   }
 `;
 
-const atmosphereFragmentShader = `
+const edgeGlowFragment = `
   varying vec3 vNormal;
   varying vec3 vViewDir;
   void main() {
     float fresnel = 1.0 - dot(vNormal, vViewDir);
-    float intensity = pow(fresnel, 3.5);
-    vec3 color = mix(vec3(0.1, 0.3, 0.6), vec3(0.15, 0.5, 0.8), fresnel);
-    gl_FragColor = vec4(color, intensity * 0.55);
-  }
-`;
-
-const outerGlowVertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-    vViewDir = normalize(-mvPos.xyz);
-    gl_Position = projectionMatrix * mvPos;
-  }
-`;
-
-const outerGlowFragmentShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    float fresnel = 1.0 - dot(vNormal, vViewDir);
-    float intensity = pow(fresnel, 5.0);
-    gl_FragColor = vec4(0.15, 0.45, 0.75, intensity * 0.4);
+    // Very thin, soft edge — realistic atmosphere
+    float rim = pow(fresnel, 6.0) * 0.8;
+    float haze = pow(fresnel, 2.5) * 0.06;
+    float intensity = rim + haze;
+    // Slight blue-white atmosphere tint
+    vec3 color = mix(vec3(0.35, 0.6, 0.9), vec3(0.6, 0.8, 1.0), pow(fresnel, 3.0));
+    gl_FragColor = vec4(color, intensity);
   }
 `;
 
@@ -111,7 +181,7 @@ export default function Globe({
     controls: OrbitControls;
     globe: THREE.Mesh;
     airportGroup: THREE.Group;
-    flightPointsGeo: THREE.BufferGeometry;
+    flightGroup: THREE.Group;
     routeLine: THREE.Line | null;
     animationId: number;
   } | null>(null);
@@ -124,83 +194,70 @@ export default function Globe({
   const airportsRef = useRef(airports);
   airportsRef.current = airports;
 
-  // Initialize Three.js scene
   useEffect(() => {
     if (!containerRef.current || sceneDataRef.current) return;
     const container = containerRef.current;
 
-    // Scene
+    // Scene — deep space black
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020508);
+    scene.background = new THREE.Color(0x010204);
 
-    // Camera — angled to show North America like the reference
+    // Camera — close to fill screen vertically
     const camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
       1,
-      2000
+      3000
     );
-    camera.position.set(80, 80, 240);
+    camera.position.set(50, 45, 165);
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
+      powerPreference: "high-performance",
     });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
 
-    // Stars
+    // Subtle starfield
     scene.add(createStars());
 
-    // Ambient light
-    scene.add(new THREE.AmbientLight(0x222244, 0.5));
+    // Minimal ambient — keeps dark side truly dark
+    scene.add(new THREE.AmbientLight(0x111122, 0.3));
 
-    // Directional light (simulates sun — dim for night side)
-    const sunLight = new THREE.DirectionalLight(0x334466, 0.4);
-    sunLight.position.set(-200, 100, 200);
-    scene.add(sunLight);
-
-    // Globe sphere
-    const globeGeo = new THREE.SphereGeometry(RADIUS, 64, 64);
-    const globeMat = new THREE.MeshPhongMaterial({
-      color: 0x0a1628,
-      emissive: 0x040810,
-      specular: 0x111833,
-      shininess: 15,
+    // Globe sphere — starts dark, texture loaded async
+    const globeGeo = new THREE.SphereGeometry(RADIUS, 96, 96);
+    const globeMat = new THREE.MeshBasicMaterial({
+      color: 0x050a14,
     });
 
-    // Try loading night earth texture
+    // Load night earth texture with high contrast
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
     loader.load(
       "https://unpkg.com/three-globe@2.31.1/example/img/earth-night.jpg",
       (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        // Switch to MeshBasicMaterial for maximum emissive city lights
         globeMat.map = texture;
-        globeMat.emissiveMap = texture;
-        globeMat.emissive = new THREE.Color(0xffffff);
-        globeMat.emissiveIntensity = 1.1;
-        globeMat.color = new THREE.Color(0x888888);
+        globeMat.color = new THREE.Color(1.4, 1.4, 1.4); // boost brightness
         globeMat.needsUpdate = true;
-      },
-      undefined,
-      () => {
-        // Fallback: keep the dark procedural color
       }
     );
 
     const globe = new THREE.Mesh(globeGeo, globeMat);
     scene.add(globe);
 
-    // Inner atmosphere (fresnel glow on globe surface)
-    const atmGeo = new THREE.SphereGeometry(RADIUS * 1.01, 64, 64);
+    // Realistic thin atmospheric edge glow
+    const atmGeo = new THREE.SphereGeometry(RADIUS * 1.005, 96, 96);
     const atmMat = new THREE.ShaderMaterial({
-      vertexShader: atmosphereVertexShader,
-      fragmentShader: atmosphereFragmentShader,
+      vertexShader: edgeGlowVertex,
+      fragmentShader: edgeGlowFragment,
       transparent: true,
       blending: THREE.AdditiveBlending,
       side: THREE.FrontSide,
@@ -208,37 +265,23 @@ export default function Globe({
     });
     scene.add(new THREE.Mesh(atmGeo, atmMat));
 
-    // Outer atmosphere glow
-    const outerGeo = new THREE.SphereGeometry(RADIUS * 1.15, 64, 64);
-    const outerMat = new THREE.ShaderMaterial({
-      vertexShader: outerGlowVertexShader,
-      fragmentShader: outerGlowFragmentShader,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
-    scene.add(new THREE.Mesh(outerGeo, outerMat));
-
-    // Airport markers group
+    // Airport markers
     const airportGroup = new THREE.Group();
     scene.add(airportGroup);
 
-    // Create airport markers
-    const markerGeo = new THREE.SphereGeometry(0.8, 12, 12);
+    const markerGeo = new THREE.SphereGeometry(0.6, 16, 16);
     const markerMat = new THREE.MeshBasicMaterial({ color: 0x3bb8e8 });
-    const glowGeo = new THREE.SphereGeometry(2.0, 12, 12);
+    const glowGeo = new THREE.SphereGeometry(1.6, 16, 16);
     const glowMat = new THREE.MeshBasicMaterial({
       color: 0x3bb8e8,
       transparent: true,
-      opacity: 0.15,
+      opacity: 0.12,
     });
 
     airportsRef.current.forEach((airport) => {
-      const pos = latLngTo3D(airport.lat, airport.lng, RADIUS * 1.005);
+      const pos = latLngTo3D(airport.lat, airport.lng, RADIUS * 1.003);
       const marker = new THREE.Mesh(markerGeo, markerMat);
       marker.position.copy(pos);
-      marker.userData = { type: "airport", code: airport.code };
       airportGroup.add(marker);
 
       const glow = new THREE.Mesh(glowGeo, glowMat);
@@ -246,52 +289,64 @@ export default function Globe({
       airportGroup.add(glow);
     });
 
-    // Flight dots as Points
-    const flightPointsGeo = new THREE.BufferGeometry();
-    const flightMat = new THREE.PointsMaterial({
-      color: 0x3bb8e8,
-      size: 1.5,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.7,
-    });
-    const flightPoints = new THREE.Points(flightPointsGeo, flightMat);
-    scene.add(flightPoints);
+    // Aircraft sprites using instanced approach with Points
+    const flightGroup = new THREE.Group();
+    scene.add(flightGroup);
 
-    // Update flight positions
+    const aircraftTexture = createAircraftTexture();
+
     const airborne = flightsRef.current.filter(
       (f) => f.status === "en-route" || (f.progress > 0 && f.progress < 1)
     );
+
     const flightPositions = new Float32Array(airborne.length * 3);
+    const flightSizes = new Float32Array(airborne.length);
     airborne.forEach((f, i) => {
-      const pos = latLngTo3D(f.currentLat, f.currentLng, RADIUS * 1.02);
+      const pos = latLngTo3D(f.currentLat, f.currentLng, RADIUS * 1.012);
       flightPositions[i * 3] = pos.x;
       flightPositions[i * 3 + 1] = pos.y;
       flightPositions[i * 3 + 2] = pos.z;
+      flightSizes[i] = 5.0;
     });
+
+    const flightPointsGeo = new THREE.BufferGeometry();
     flightPointsGeo.setAttribute(
       "position",
       new THREE.BufferAttribute(flightPositions, 3)
     );
+    flightPointsGeo.setAttribute(
+      "size",
+      new THREE.BufferAttribute(flightSizes, 1)
+    );
 
-    // Controls
+    const flightPointsMat = new THREE.PointsMaterial({
+      map: aircraftTexture,
+      size: 5.0,
+      sizeAttenuation: true,
+      transparent: true,
+      alphaTest: 0.01,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      color: 0xffffff,
+    });
+    const flightPoints = new THREE.Points(flightPointsGeo, flightPointsMat);
+    flightGroup.add(flightPoints);
+
+    // Controls — buttery smooth
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.rotateSpeed = 0.4;
-    controls.zoomSpeed = 0.8;
-    controls.minDistance = 130;
-    controls.maxDistance = 500;
+    controls.dampingFactor = 0.04;
+    controls.rotateSpeed = 0.35;
+    controls.zoomSpeed = 0.6;
+    controls.minDistance = 115;
+    controls.maxDistance = 400;
     controls.enablePan = false;
     controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.15;
+    controls.autoRotateSpeed = 0.12;
 
-    // Route line placeholder
-    let routeLine: THREE.Line | null = null;
-
-    // Click handler
+    // Click handling
     const raycaster = new THREE.Raycaster();
-    raycaster.params.Points = { threshold: 3 };
+    raycaster.params.Points = { threshold: 4 };
     const mouse = new THREE.Vector2();
 
     const onClick = (e: MouseEvent) => {
@@ -322,26 +377,38 @@ export default function Globe({
     // Animation loop
     const animate = () => {
       const animId = requestAnimationFrame(animate);
-      sceneDataRef.current!.animationId = animId;
+      if (sceneDataRef.current) {
+        sceneDataRef.current.animationId = animId;
+      }
 
       controls.update();
+
+      // Dynamic aircraft sizing based on camera distance
+      const camDist = camera.position.length();
+      const scaleFactor = THREE.MathUtils.clamp(
+        THREE.MathUtils.mapLinear(camDist, 115, 400, 7.0, 3.0),
+        3.0,
+        7.0
+      );
+      flightPointsMat.size = scaleFactor;
+
       renderer.render(scene, camera);
 
-      // Update labels
+      // Update projected airport labels
       if (labelsRef.current) {
         const labels = labelsRef.current.children as HTMLCollectionOf<HTMLElement>;
-        const camPos = camera.position.clone().normalize();
+        const camDir = camera.position.clone().normalize();
 
         for (let i = 0; i < airportsRef.current.length; i++) {
           const airport = airportsRef.current[i];
           const label = labels[i] as HTMLElement | undefined;
           if (!label) continue;
 
-          const pos3D = latLngTo3D(airport.lat, airport.lng, RADIUS * 1.005);
+          const pos3D = latLngTo3D(airport.lat, airport.lng, RADIUS * 1.003);
           const pointDir = pos3D.clone().normalize();
-          const dot = camPos.dot(pointDir);
+          const dot = camDir.dot(pointDir);
 
-          if (dot < 0.15) {
+          if (dot < 0.2) {
             label.style.display = "none";
             continue;
           }
@@ -353,7 +420,9 @@ export default function Globe({
           label.style.display = "block";
           label.style.left = `${x}px`;
           label.style.top = `${y}px`;
-          label.style.opacity = String(Math.min(1, (dot - 0.15) * 3));
+          label.style.opacity = String(
+            Math.min(1, (dot - 0.2) * 4) * 0.85
+          );
         }
       }
     };
@@ -367,12 +436,11 @@ export default function Globe({
       controls,
       globe,
       airportGroup,
-      flightPointsGeo,
-      routeLine,
+      flightGroup,
+      routeLine: null,
       animationId: animId,
     };
 
-    // Resize handler
     const onResize = () => {
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
@@ -380,7 +448,6 @@ export default function Globe({
     };
     window.addEventListener("resize", onResize);
 
-    // Store flights globally for click handler
     (window as unknown as { __skyway_flights?: Flight[] }).__skyway_flights =
       flightsRef.current;
 
@@ -397,12 +464,11 @@ export default function Globe({
     };
   }, []);
 
-  // Update route line for selected flight
+  // Route arc for selected flight
   useEffect(() => {
     const data = sceneDataRef.current;
     if (!data) return;
 
-    // Remove old route
     if (data.routeLine) {
       data.scene.remove(data.routeLine);
       data.routeLine.geometry.dispose();
@@ -412,9 +478,8 @@ export default function Globe({
 
     if (!selectedFlight) return;
 
-    // Create great circle arc
     const points: THREE.Vector3[] = [];
-    const steps = 64;
+    const steps = 80;
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const lat1 = selectedFlight.origin.lat * DEG2RAD;
@@ -449,8 +514,7 @@ export default function Globe({
       const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) * (180 / Math.PI);
       const lng = Math.atan2(y, x) * (180 / Math.PI);
 
-      // Elevate arc above globe surface
-      const elevation = 1 + Math.sin(t * Math.PI) * 8;
+      const elevation = 1 + Math.sin(t * Math.PI) * 6;
       points.push(latLngTo3D(lat, lng, RADIUS + elevation));
     }
 
@@ -459,8 +523,7 @@ export default function Globe({
       const lineMat = new THREE.LineBasicMaterial({
         color: 0x00e5ff,
         transparent: true,
-        opacity: 0.6,
-        linewidth: 1,
+        opacity: 0.5,
       });
       const line = new THREE.Line(lineGeo, lineMat);
       data.scene.add(line);
@@ -478,12 +541,14 @@ export default function Globe({
         {airports.map((airport) => (
           <div
             key={airport.code}
-            className="absolute text-[10px] font-mono tracking-wide"
+            className="absolute text-[9px] font-mono tracking-wider font-medium"
             style={{
-              color: "rgba(107, 173, 201, 0.85)",
-              textShadow: "0 0 6px rgba(59, 184, 232, 0.3), 0 1px 2px rgba(0,0,0,0.8)",
-              transform: "translate(-50%, 8px)",
+              color: "rgba(130, 195, 220, 0.8)",
+              textShadow:
+                "0 0 4px rgba(59, 184, 232, 0.25), 0 1px 3px rgba(0,0,0,0.9)",
+              transform: "translate(-50%, 6px)",
               whiteSpace: "nowrap",
+              letterSpacing: "0.08em",
             }}
           >
             {airport.code}
