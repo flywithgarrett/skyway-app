@@ -1,149 +1,113 @@
 import { Flight } from "./types";
 import { lookupAirline, UNKNOWN_AIRPORT } from "./data";
 
-// --- Server-side cache (60s TTL) — max 1 AeroAPI call per minute ---
+// --- Server-side cache (60s TTL) — max 1 API call per minute ---
 let cache: { data: Flight[]; timestamp: number } | null = null;
 const CACHE_TTL = 60000;
 
-const FA_BASE = "https://aeroapi.flightaware.com/aeroapi";
-const MAX_FLIGHTS = 200;
+const MAX_FLIGHTS = 4000;
 
-function faHeaders(): Record<string, string> {
-  const key = process.env.FLIGHTAWARE_API_KEY;
-  if (!key) throw new Error("FLIGHTAWARE_API_KEY not set");
-  return { "x-apikey": key, Accept: "application/json" };
-}
-
-function mapAirport(
-  fa: { code_iata?: string; code_icao?: string; name?: string; city?: string; latitude?: number; longitude?: number } | null | undefined
-): Flight["origin"] {
-  if (!fa) return { ...UNKNOWN_AIRPORT };
-  return {
-    code: fa.code_iata || fa.code_icao || "---",
-    icao: fa.code_icao || "----",
-    name: fa.name || "Unknown",
-    city: fa.city || "---",
-    country: "",
-    lat: fa.latitude || 0,
-    lng: fa.longitude || 0,
-  };
-}
-
-function mapStatus(s: string | undefined): Flight["status"] {
-  if (!s) return "unknown";
-  const lower = s.toLowerCase();
-  if (lower.includes("en route") || lower.includes("enroute") || lower === "active") return "en-route";
-  if (lower.includes("landed") || lower.includes("arrived")) return "landed";
-  if (lower.includes("scheduled") || lower.includes("filed")) return "scheduled";
-  if (lower.includes("taxi")) return "taxiing";
-  return "unknown";
-}
-
+// ADSB.lol state vector indices (OpenSky-compatible format)
+// [0] icao24, [1] callsign, [2] origin_country, [3] time_position,
+// [4] last_contact, [5] longitude, [6] latitude, [7] baro_altitude,
+// [8] on_ground, [9] velocity, [10] true_track, [11] vertical_rate,
+// [12] sensors, [13] geo_altitude, [14] squawk, [15] spi, [16] position_source
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformFlight(f: any): Flight | null {
-  const pos = f.last_position;
-  if (!pos) return null;
-  const lat = pos.latitude;
-  const lng = pos.longitude;
+function transformStateVector(sv: any[]): Flight | null {
+  const lat = sv[6];
+  const lng = sv[5];
   if (lat == null || lng == null) return null;
+  if (sv[8] === true) return null; // on ground
 
-  const ident: string = f.ident || f.ident_iata || "";
-  const airline = lookupAirline(f.ident_icao || ident);
+  const callsign = (sv[1] || "").trim();
+  const airline = lookupAirline(callsign);
+
+  // Velocity from m/s to knots
+  const speedKts = sv[9] != null ? Math.round(sv[9] * 1.94384) : 0;
+  // Altitude from meters to feet
+  const altFt = sv[7] != null ? Math.round(sv[7] * 3.28084) : 0;
+  const geoAltFt = sv[13] != null ? Math.round(sv[13] * 3.28084) : altFt;
+  const heading = sv[10] != null ? Math.round(sv[10]) : 0;
+  const vertRate = sv[11] != null ? Math.round(sv[11] * 196.85) : null; // m/s to fpm
 
   return {
-    id: f.fa_flight_id || ident,
-    flightNumber: f.ident_iata || f.ident || ident,
-    callsign: f.ident_icao || f.ident || "",
+    id: sv[0] || callsign || `${lat}-${lng}`,
+    flightNumber: callsign || sv[0] || "???",
+    callsign,
     airline,
-    origin: mapAirport(f.origin),
-    destination: mapAirport(f.destination),
-    status: mapStatus(f.status),
-    scheduledDep: f.scheduled_out || f.scheduled_off || null,
-    actualDep: f.actual_out || f.actual_off || null,
-    scheduledArr: f.scheduled_in || f.scheduled_on || null,
-    estimatedArr: f.estimated_in || f.estimated_on || null,
-    actualArr: f.actual_in || f.actual_on || null,
-    aircraft: f.aircraft_type || null,
-    registration: f.registration || null,
-    altitude: (pos.altitude || 0) * 100, // AeroAPI returns altitude in hundreds of feet
-    speed: pos.groundspeed || 0,
-    heading: pos.heading || 0,
-    progress: f.progress_percent || 0,
+    origin: { ...UNKNOWN_AIRPORT },
+    destination: { ...UNKNOWN_AIRPORT },
+    status: "en-route",
+    scheduledDep: null,
+    actualDep: null,
+    scheduledArr: null,
+    estimatedArr: null,
+    actualArr: null,
+    aircraft: null,
+    registration: null,
+    altitude: altFt,
+    speed: speedKts,
+    heading,
+    progress: 0,
     currentLat: lat,
     currentLng: lng,
-    originCountry: "",
-    onGround: pos.altitude != null && pos.altitude < 1,
-    verticalRate: null,
-    squawk: null,
-    geoAltitude: (pos.altitude || 0) * 100,
-    lastContact: pos.timestamp ? Math.floor(new Date(pos.timestamp).getTime() / 1000) : Math.floor(Date.now() / 1000),
-    routeDistance: f.route_distance ? Math.round(f.route_distance) : null,
+    originCountry: sv[2] || "",
+    onGround: false,
+    verticalRate: vertRate,
+    squawk: sv[14] || null,
+    geoAltitude: geoAltFt,
+    lastContact: sv[4] || Math.floor(Date.now() / 1000),
+    routeDistance: null,
   };
 }
 
-// --- Main fetch: FlightAware AeroAPI v4 — airborne flights only ---
+// --- Main fetch: ADSB.lol global firehose ---
 
 export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: string; error?: string }> {
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
     return { flights: cache.data, source: "cache" };
   }
 
-  const apiKey = process.env.FLIGHTAWARE_API_KEY;
-  if (!apiKey) {
-    console.error("[SkyWay] FATAL: FLIGHTAWARE_API_KEY not set.");
-    return { flights: [], source: "error:no-api-key", error: "FlightAware API Key Missing — set FLIGHTAWARE_API_KEY in environment variables." };
-  }
-
   try {
-    console.log("[SkyWay] Fetching FlightAware AeroAPI v4 (airborne flights)...");
+    console.log("[SkyWay] Fetching ADSB.lol global state vectors...");
 
-    // Simple query — all filtering done server-side after fetch
-    const url = `${FA_BASE}/flights/search?query=${encodeURIComponent("-inAir 1")}&max_pages=1`;
-    const res = await fetch(url, {
-      headers: faHeaders(),
-      signal: AbortSignal.timeout(15000),
+    const res = await fetch("https://api.adsb.lol/v2/states/all", {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.error(`[SkyWay] AeroAPI FAILED — HTTP ${res.status} ${res.statusText}`);
+      console.error(`[SkyWay] ADSB.lol FAILED — HTTP ${res.status} ${res.statusText}`);
       console.error(`[SkyWay] Response body: ${body.substring(0, 500)}`);
-
-      const reason = res.status === 401 ? "Unauthorized — Check API Key"
-        : res.status === 403 ? "Forbidden — API key lacks permission for this endpoint"
-        : res.status === 429 ? "Rate Limited — Too many requests, increase cache TTL"
-        : res.status === 402 ? "Payment Required — Upgrade FlightAware plan"
-        : `${res.statusText || "Unknown error"}`;
-      const errorMsg = `FlightAware API Error: ${res.status} ${reason}`;
 
       if (cache) {
         console.warn("[SkyWay] Returning stale cache.");
         return { flights: cache.data, source: "stale-cache" };
       }
-      return { flights: [], source: `error:http-${res.status}`, error: errorMsg };
+      return { flights: [], source: `error:http-${res.status}`, error: `ADSB.lol API Error: ${res.status} ${res.statusText}` };
     }
 
     const json = await res.json();
-    const rawFlights: unknown[] = json.flights || [];
-    console.log(`[SkyWay] AeroAPI returned ${rawFlights.length} raw flights`);
+    const states: unknown[][] = json.states || [];
+    console.log(`[SkyWay] ADSB.lol returned ${states.length} state vectors`);
 
-    // Server-side filtering: airborne flights over North America
     const flights: Flight[] = [];
-    for (const f of rawFlights) {
+    for (const sv of states) {
       if (flights.length >= MAX_FLIGHTS) break;
-      const mapped = transformFlight(f);
-      if (!mapped || mapped.onGround) continue;
-      // Geographic bounding box: North America (lat 24-50, lng -130 to -60)
-      if (mapped.currentLat < 24 || mapped.currentLat > 50 || mapped.currentLng < -130 || mapped.currentLng > -60) continue;
+      const mapped = transformStateVector(sv);
+      if (!mapped) continue;
+      // Skip very low altitude (< 1000 ft) to filter ground vehicles / noise
+      if (mapped.altitude < 1000) continue;
       flights.push(mapped);
     }
 
     console.log(`[SkyWay] ${flights.length} airborne flights (capped at ${MAX_FLIGHTS})`);
 
     cache = { data: flights, timestamp: Date.now() };
-    return { flights, source: "flightaware" };
+    return { flights, source: "adsb.lol" };
   } catch (err) {
-    console.error("[SkyWay] AeroAPI network error:", err instanceof Error ? err.message : String(err));
+    console.error("[SkyWay] ADSB.lol network error:", err instanceof Error ? err.message : String(err));
 
     if (cache) {
       console.warn("[SkyWay] Returning stale cache after network error.");

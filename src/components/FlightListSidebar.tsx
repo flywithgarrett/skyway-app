@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Flight } from "@/lib/types";
 import { fmtAltitude, fmtSpeed } from "@/lib/format";
 
@@ -10,9 +10,14 @@ interface FlightListSidebarProps {
   onSelectFlight: (flight: Flight) => void;
 }
 
+const ROW_HEIGHT = 68; // px per flight row
+const OVERSCAN = 8;    // extra rows above/below viewport
+
 export default function FlightListSidebar({ flights, selectedFlightId, onSelectFlight }: FlightListSidebarProps) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return flights;
@@ -24,6 +29,16 @@ export default function FlightListSidebar({ flights, selectedFlightId, onSelectF
       f.airline.name.toUpperCase().includes(q)
     );
   }, [flights, search]);
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
+  }, []);
+
+  // Reset scroll when search changes
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [search]);
 
   if (collapsed) {
     return (
@@ -38,6 +53,13 @@ export default function FlightListSidebar({ flights, selectedFlightId, onSelectF
       </button>
     );
   }
+
+  // Virtualization calculations
+  const viewportHeight = scrollRef.current?.clientHeight || 600;
+  const totalHeight = filtered.length * ROW_HEIGHT;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIdx = Math.min(filtered.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
+  const visibleFlights = filtered.slice(startIdx, endIdx);
 
   return (
     <div className="absolute top-14 left-3 bottom-16 z-20 w-72 flex flex-col pointer-events-auto hidden sm:flex">
@@ -77,57 +99,67 @@ export default function FlightListSidebar({ flights, selectedFlightId, onSelectF
           </div>
         </div>
 
-        {/* Scrollable flight list */}
-        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(0,229,255,0.15) transparent" }}>
+        {/* Virtualized scrollable flight list */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto"
+          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(0,229,255,0.15) transparent" }}
+          onScroll={onScroll}
+        >
           {filtered.length === 0 ? (
             <div className="px-3 py-6 text-center text-[10px] text-white/15">
               {search ? "No matches" : "No flights loaded"}
             </div>
           ) : (
-            filtered.map((f) => {
-              const isSelected = f.id === selectedFlightId;
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => onSelectFlight(f)}
-                  className="w-full text-left px-3 py-2 transition-colors border-b border-white/[0.02]"
-                  style={{
-                    background: isSelected ? "rgba(0,229,255,0.06)" : "transparent",
-                  }}
-                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
-                >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-[12px] font-bold font-mono" style={{ color: isSelected ? "#00e5ff" : "rgba(0,229,255,0.7)" }}>
-                      {f.callsign || f.flightNumber}
-                    </span>
-                    <span className="text-[9px] font-mono text-white/25">
-                      {fmtAltitude(f.altitude)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[10px] text-white/30 truncate">{f.airline.name}</span>
-                      {f.aircraft && (
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
-                          {f.aircraft}
-                        </span>
-                      )}
+            <div style={{ height: totalHeight, position: "relative" }}>
+              {visibleFlights.map((f, vi) => {
+                const idx = startIdx + vi;
+                const isSelected = f.id === selectedFlightId;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => onSelectFlight(f)}
+                    className="absolute left-0 right-0 text-left px-3 py-2 border-b border-white/[0.02]"
+                    style={{
+                      top: idx * ROW_HEIGHT,
+                      height: ROW_HEIGHT,
+                      background: isSelected ? "rgba(0,229,255,0.06)" : "transparent",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = isSelected ? "rgba(0,229,255,0.06)" : "transparent"; }}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[12px] font-bold font-mono" style={{ color: isSelected ? "#00e5ff" : "rgba(0,229,255,0.7)" }}>
+                        {f.callsign || f.flightNumber}
+                      </span>
+                      <span className="text-[9px] font-mono text-white/25">
+                        {fmtAltitude(f.altitude)}
+                      </span>
                     </div>
-                    <span className="text-[9px] font-mono text-white/20 shrink-0 ml-2">
-                      {fmtSpeed(f.speed)}
-                    </span>
-                  </div>
-                  {f.origin.code !== "---" && f.destination.code !== "---" && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <span className="text-[9px] font-mono text-white/20">{f.origin.code}</span>
-                      <span className="text-[8px] text-white/10">→</span>
-                      <span className="text-[9px] font-mono text-white/20">{f.destination.code}</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] text-white/30 truncate">{f.airline.name}</span>
+                        {f.aircraft && (
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
+                            {f.aircraft}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[9px] font-mono text-white/20 shrink-0 ml-2">
+                        {fmtSpeed(f.speed)}
+                      </span>
                     </div>
-                  )}
-                </button>
-              );
-            })
+                    {f.origin.code !== "---" && f.destination.code !== "---" && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[9px] font-mono text-white/20">{f.origin.code}</span>
+                        <span className="text-[8px] text-white/10">→</span>
+                        <span className="text-[9px] font-mono text-white/20">{f.destination.code}</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

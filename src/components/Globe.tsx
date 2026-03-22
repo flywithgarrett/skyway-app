@@ -14,7 +14,7 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 3.2;
+const AIRCRAFT_SCALE = 2.4;
 const AIRCRAFT_SCALE_SELECTED = 5.0;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
@@ -341,7 +341,7 @@ export default function Globe({
     });
 
     // Aircraft InstancedMesh — capacity for live data updates
-    const MAX_FLIGHTS = 12000;
+    const MAX_FLIGHTS = 4000;
     const aircraftTexture = createAircraftTexture();
     const airborne = flightsRef.current.filter(
       (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
@@ -378,9 +378,9 @@ export default function Globe({
     controls.enablePan = false;
     controls.autoRotate = false;
 
-    // Cinematic intro — animate to US center
-    const usTarget = latLngTo3D(39, -98, 1).normalize().multiplyScalar(175);
-    cameraAnimRef.current = { targetPos: usTarget };
+    // Cinematic intro — animate to show global density (NA, Atlantic, Europe)
+    const globalTarget = latLngTo3D(35, -40, 1).normalize().multiplyScalar(320);
+    cameraAnimRef.current = { targetPos: globalTarget };
 
     // Click + hover handling with raycaster
     const raycaster = new THREE.Raycaster();
@@ -441,7 +441,7 @@ export default function Globe({
         const now = performance.now();
         const dtSec = Math.min((now - sd.lastFrameTime) / 1000, 0.1); // cap at 100ms
         sd.lastFrameTime = now;
-        const flightCount = Math.min(sd.airborneFlights.length, 12000);
+        const flightCount = Math.min(sd.airborneFlights.length, 4000);
         // 1 knot = 1 nautical mile/hour = 1/3600 nm/sec
         // 1 nm = 1/60 degree of latitude
         const KTS_TO_DEG_PER_SEC = 1 / (3600 * 60);
@@ -492,7 +492,7 @@ export default function Globe({
     const animId = requestAnimationFrame(animate);
 
     // Initialize dead reckoning arrays from initial positions
-    const MAX = 12000;
+    const MAX = 4000;
     const drLats = new Float64Array(MAX);
     const drLngs = new Float64Array(MAX);
     for (let i = 0; i < airborne.length && i < MAX; i++) {
@@ -535,7 +535,7 @@ export default function Globe({
     const airborne = flights.filter(
       (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
-    const count = Math.min(airborne.length, 12000);
+    const count = Math.min(airborne.length, 4000);
     data.airborneFlights = airborne;
     data.aircraftMesh.count = count;
     // Reset dead reckoning positions to fresh API data
