@@ -255,6 +255,10 @@ export default function Globe({
     aircraftMesh: THREE.InstancedMesh;
     airborneFlights: Flight[];
     instanceColors: Float32Array;
+    // Dead reckoning: mutable lat/lng positions advanced each frame
+    drLats: Float64Array;
+    drLngs: Float64Array;
+    lastFrameTime: number;
     jetstream: THREE.Mesh | null;
     jetstreamMat: THREE.ShaderMaterial | null;
     clock: THREE.Clock;
@@ -431,6 +435,33 @@ export default function Globe({
         controls.update();
       }
 
+      // Dead reckoning: advance aircraft positions between API updates
+      const sd = sceneDataRef.current;
+      if (sd) {
+        const now = performance.now();
+        const dtSec = Math.min((now - sd.lastFrameTime) / 1000, 0.1); // cap at 100ms
+        sd.lastFrameTime = now;
+        const flightCount = Math.min(sd.airborneFlights.length, 12000);
+        // 1 knot = 1 nautical mile/hour = 1/3600 nm/sec
+        // 1 nm = 1/60 degree of latitude
+        const KTS_TO_DEG_PER_SEC = 1 / (3600 * 60);
+        let needsMatrixUpdate = false;
+        for (let i = 0; i < flightCount; i++) {
+          const f = sd.airborneFlights[i];
+          if (f.speed <= 0) continue;
+          const hdgRad = f.heading * DEG2RAD;
+          const deltaDeg = f.speed * KTS_TO_DEG_PER_SEC * dtSec;
+          sd.drLats[i] += Math.cos(hdgRad) * deltaDeg;
+          // Longitude correction for latitude
+          const cosLat = Math.cos(sd.drLats[i] * DEG2RAD);
+          sd.drLngs[i] += Math.sin(hdgRad) * deltaDeg / (cosLat || 1);
+          if (selectedRef.current?.id === f.id) continue; // skip selected — handled by selection effect
+          sd.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(sd.drLats[i], sd.drLngs[i], f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+          needsMatrixUpdate = true;
+        }
+        if (needsMatrixUpdate) sd.aircraftMesh.instanceMatrix.needsUpdate = true;
+      }
+
       // Update jetstream shader time
       if (sceneDataRef.current?.jetstreamMat) {
         sceneDataRef.current.jetstreamMat.uniforms.uTime.value = clock.getElapsedTime();
@@ -460,9 +491,19 @@ export default function Globe({
 
     const animId = requestAnimationFrame(animate);
 
+    // Initialize dead reckoning arrays from initial positions
+    const MAX = 12000;
+    const drLats = new Float64Array(MAX);
+    const drLngs = new Float64Array(MAX);
+    for (let i = 0; i < airborne.length && i < MAX; i++) {
+      drLats[i] = airborne[i].currentLat;
+      drLngs[i] = airborne[i].currentLng;
+    }
+
     sceneDataRef.current = {
       scene, camera, renderer, controls, globe, airportGroup,
       aircraftMesh, airborneFlights: airborne, instanceColors,
+      drLats, drLngs, lastFrameTime: performance.now(),
       jetstream: null, jetstreamMat: null, clock,
       animationId: animId,
     };
@@ -497,13 +538,17 @@ export default function Globe({
     const count = Math.min(airborne.length, 12000);
     data.airborneFlights = airborne;
     data.aircraftMesh.count = count;
+    // Reset dead reckoning positions to fresh API data
     for (let i = 0; i < count; i++) {
       const f = airborne[i];
+      data.drLats[i] = f.currentLat;
+      data.drLngs[i] = f.currentLng;
       data.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
       data.instanceColors[i * 3] = 1;
       data.instanceColors[i * 3 + 1] = 1;
       data.instanceColors[i * 3 + 2] = 1;
     }
+    data.lastFrameTime = performance.now();
     data.aircraftMesh.instanceMatrix.needsUpdate = true;
     if (data.aircraftMesh.instanceColor)
       (data.aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;

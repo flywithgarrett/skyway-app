@@ -15,24 +15,31 @@ export function useLiveFlights(intervalMs: number = 10000, initialFlights: Fligh
       const json = await res.json();
       if (!mountedRef.current) return;
 
-      setFlights(json.flights || []);
-      setSource(json.source || "unknown");
+      const incoming = json.flights || [];
 
       if (json.error) {
         setError(json.error);
+        // On 429 or any error: keep existing flights on the map, don't clear
+        if (incoming.length > 0) {
+          setFlights(incoming);
+        }
       } else if (!res.ok) {
         setError(`API returned HTTP ${res.status}`);
       } else {
+        // Success — update flights and clear error
+        setFlights(incoming);
+        setSource(json.source || "unknown");
         setError(null);
       }
 
       if (json.source) {
-        console.log(`[SkyWay] ${(json.flights || []).length} flights (${json.source})`);
+        console.log(`[SkyWay] ${incoming.length} flights (${json.source})`);
       }
     } catch (err) {
       if (!mountedRef.current) return;
       const msg = err instanceof Error ? err.message : String(err);
       setError(`Network Error: ${msg}`);
+      // Keep existing flights — don't clear the map
       console.error("[SkyWay] Fetch failed:", err);
     }
   }, []);

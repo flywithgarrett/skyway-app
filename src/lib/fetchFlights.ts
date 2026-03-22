@@ -1,9 +1,9 @@
 import { Flight } from "./types";
 import { lookupAirline, UNKNOWN_AIRPORT } from "./data";
 
-// --- Server-side cache (30s TTL) to protect AeroAPI rate limits ---
+// --- Server-side cache (60s TTL) — max 1 AeroAPI call per minute ---
 let cache: { data: Flight[]; timestamp: number } | null = null;
-const CACHE_TTL = 30000;
+const CACHE_TTL = 60000;
 
 const FA_BASE = "https://aeroapi.flightaware.com/aeroapi";
 const MAX_FLIGHTS = 200;
