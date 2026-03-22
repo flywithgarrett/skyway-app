@@ -1,9 +1,84 @@
 import { Flight } from "./types";
-import { lookupAirline, callsignToFlightNumber, UNKNOWN_AIRPORT } from "./data";
+import { lookupAirline, UNKNOWN_AIRPORT } from "./data";
 
-// Server-side cache shared across requests
+// --- Aggressive server-side cache (30s TTL) to protect API costs ---
 let cache: { data: Flight[]; timestamp: number } | null = null;
-const CACHE_TTL = 10000;
+const CACHE_TTL = 30000; // 30 seconds — max 2 API calls per minute
+
+const FA_BASE = "https://aeroapi.flightaware.com/aeroapi";
+
+function faHeaders(): Record<string, string> {
+  const key = process.env.FLIGHTAWARE_API_KEY;
+  if (!key) throw new Error("FLIGHTAWARE_API_KEY not set");
+  return { "x-apikey": key, Accept: "application/json" };
+}
+
+function mapAirport(fa: { code_iata?: string; code_icao?: string; name?: string; city?: string; timezone?: string; latitude?: number; longitude?: number } | null | undefined): Flight["origin"] {
+  if (!fa) return { ...UNKNOWN_AIRPORT, icao: "----" };
+  return {
+    code: fa.code_iata || fa.code_icao || "---",
+    icao: fa.code_icao || "----",
+    name: fa.name || "Unknown",
+    city: fa.city || "---",
+    country: "",
+    lat: fa.latitude || 0,
+    lng: fa.longitude || 0,
+  };
+}
+
+function mapStatus(s: string | undefined): Flight["status"] {
+  if (!s) return "unknown";
+  const lower = s.toLowerCase();
+  if (lower.includes("en route") || lower.includes("enroute") || lower === "active") return "en-route";
+  if (lower.includes("landed") || lower.includes("arrived")) return "landed";
+  if (lower.includes("scheduled") || lower.includes("filed")) return "scheduled";
+  if (lower.includes("taxi")) return "taxiing";
+  return "unknown";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformFlight(f: any): Flight | null {
+  const pos = f.last_position;
+  if (!pos) return null;
+  const lat = pos.latitude;
+  const lng = pos.longitude;
+  if (lat == null || lng == null) return null;
+
+  const ident: string = f.ident || f.ident_iata || "";
+  const airline = lookupAirline(f.ident_icao || ident);
+
+  return {
+    id: f.fa_flight_id || ident,
+    flightNumber: f.ident_iata || f.ident || ident,
+    callsign: f.ident_icao || f.ident || "",
+    airline,
+    origin: mapAirport(f.origin),
+    destination: mapAirport(f.destination),
+    status: mapStatus(f.status),
+    scheduledDep: f.scheduled_out || f.scheduled_off || null,
+    actualDep: f.actual_out || f.actual_off || null,
+    scheduledArr: f.scheduled_in || f.scheduled_on || null,
+    estimatedArr: f.estimated_in || f.estimated_on || null,
+    actualArr: f.actual_in || f.actual_on || null,
+    aircraft: f.aircraft_type || null,
+    registration: f.registration || null,
+    altitude: (pos.altitude || 0) * 100, // AeroAPI returns altitude in hundreds of feet
+    speed: pos.groundspeed || 0,
+    heading: pos.heading || 0,
+    progress: f.progress_percent || 0,
+    currentLat: lat,
+    currentLng: lng,
+    originCountry: "",
+    onGround: pos.altitude != null && pos.altitude < 1,
+    verticalRate: null,
+    squawk: null,
+    geoAltitude: (pos.altitude || 0) * 100,
+    lastContact: pos.timestamp ? Math.floor(new Date(pos.timestamp).getTime() / 1000) : Math.floor(Date.now() / 1000),
+    routeDistance: f.route_distance ? Math.round(f.route_distance) : null,
+  };
+}
+
+// --- Fallback flights when API key is missing or API fails ---
 
 function seededRandom(seed: number) {
   let s = seed;
@@ -13,138 +88,94 @@ function seededRandom(seed: number) {
 function generateFallbackFlights(): Flight[] {
   const rand = seededRandom(Date.now() % 100000);
   const flights: Flight[] = [];
-
-  const routes: { cs: string; lat: number; lng: number; alt: number; spd: number; hdg: number; co: string }[] = [
-    { cs: "UAL452", lat: 40.2, lng: -78.5, alt: 35000, spd: 470, hdg: 270, co: "United States" },
-    { cs: "DAL1872", lat: 33.8, lng: -86.3, alt: 37000, spd: 480, hdg: 180, co: "United States" },
-    { cs: "AAL295", lat: 32.5, lng: -100.2, alt: 33000, spd: 450, hdg: 90, co: "United States" },
-    { cs: "SWA1423", lat: 37.1, lng: -110.5, alt: 34000, spd: 440, hdg: 245, co: "United States" },
-    { cs: "JBU837", lat: 41.8, lng: -72.5, alt: 28000, spd: 410, hdg: 210, co: "United States" },
-    { cs: "UAL1097", lat: 39.5, lng: -104.8, alt: 39000, spd: 490, hdg: 80, co: "United States" },
-    { cs: "DAL587", lat: 35.2, lng: -90.4, alt: 36000, spd: 460, hdg: 320, co: "United States" },
-    { cs: "AAL1750", lat: 25.9, lng: -80.1, alt: 31000, spd: 435, hdg: 350, co: "United States" },
-    { cs: "SWA2981", lat: 34.0, lng: -118.0, alt: 25000, spd: 390, hdg: 130, co: "United States" },
-    { cs: "UAL682", lat: 47.5, lng: -122.3, alt: 38000, spd: 475, hdg: 160, co: "United States" },
-    { cs: "ASA327", lat: 45.2, lng: -120.5, alt: 35000, spd: 460, hdg: 195, co: "United States" },
-    { cs: "FFT912", lat: 39.8, lng: -104.7, alt: 33000, spd: 445, hdg: 55, co: "United States" },
-    { cs: "NKS431", lat: 28.5, lng: -81.3, alt: 36000, spd: 450, hdg: 290, co: "United States" },
-    { cs: "DAL2109", lat: 42.3, lng: -83.0, alt: 29000, spd: 420, hdg: 240, co: "United States" },
-    { cs: "AAL587", lat: 29.9, lng: -95.3, alt: 34000, spd: 455, hdg: 5, co: "United States" },
-    { cs: "BAW178", lat: 52.5, lng: -30.0, alt: 39000, spd: 510, hdg: 280, co: "United Kingdom" },
-    { cs: "UAL110", lat: 55.0, lng: -25.0, alt: 37000, spd: 500, hdg: 260, co: "United States" },
-    { cs: "DAL47", lat: 50.5, lng: -35.0, alt: 41000, spd: 520, hdg: 90, co: "United States" },
-    { cs: "AFR007", lat: 48.0, lng: -20.0, alt: 38000, spd: 505, hdg: 275, co: "France" },
-    { cs: "DLH402", lat: 53.0, lng: -18.0, alt: 40000, spd: 495, hdg: 85, co: "Germany" },
-    { cs: "BAW456", lat: 51.5, lng: -0.5, alt: 15000, spd: 300, hdg: 90, co: "United Kingdom" },
-    { cs: "DLH932", lat: 50.0, lng: 8.5, alt: 32000, spd: 440, hdg: 180, co: "Germany" },
-    { cs: "AFR1682", lat: 49.0, lng: 2.5, alt: 28000, spd: 410, hdg: 150, co: "France" },
-    { cs: "KLM643", lat: 52.3, lng: 4.7, alt: 34000, spd: 450, hdg: 120, co: "Netherlands" },
-    { cs: "RYR8824", lat: 53.3, lng: -6.2, alt: 37000, spd: 445, hdg: 100, co: "Ireland" },
-    { cs: "EZY54", lat: 48.5, lng: 2.0, alt: 35000, spd: 430, hdg: 210, co: "United Kingdom" },
-    { cs: "SAS937", lat: 59.6, lng: 17.9, alt: 36000, spd: 455, hdg: 195, co: "Sweden" },
-    { cs: "THY45", lat: 41.3, lng: 28.7, alt: 38000, spd: 470, hdg: 60, co: "Turkey" },
-    { cs: "IBE3172", lat: 40.4, lng: -3.7, alt: 33000, spd: 440, hdg: 45, co: "Spain" },
-    { cs: "UAE205", lat: 25.2, lng: 55.3, alt: 40000, spd: 510, hdg: 310, co: "United Arab Emirates" },
-    { cs: "QTR7", lat: 30.0, lng: 45.0, alt: 39000, spd: 505, hdg: 290, co: "Qatar" },
-    { cs: "SIA21", lat: 20.0, lng: 80.0, alt: 41000, spd: 520, hdg: 45, co: "Singapore" },
-    { cs: "CPA841", lat: 35.0, lng: 120.0, alt: 37000, spd: 495, hdg: 250, co: "Hong Kong" },
-    { cs: "ANA9", lat: 45.0, lng: 150.0, alt: 38000, spd: 500, hdg: 70, co: "Japan" },
+  const routes = [
+    { cs: "UAL452", lat: 40.2, lng: -78.5, alt: 350, spd: 470, hdg: 270, co: "US", orig: "KJFK", dest: "KLAX" },
+    { cs: "DAL1872", lat: 33.8, lng: -86.3, alt: 370, spd: 480, hdg: 180, co: "US", orig: "KATL", dest: "KMIA" },
+    { cs: "AAL295", lat: 32.5, lng: -100.2, alt: 330, spd: 450, hdg: 90, co: "US", orig: "KDFW", dest: "KJFK" },
+    { cs: "SWA1423", lat: 37.1, lng: -110.5, alt: 340, spd: 440, hdg: 245, co: "US", orig: "KDEN", dest: "KLAX" },
+    { cs: "JBU837", lat: 41.8, lng: -72.5, alt: 280, spd: 410, hdg: 210, co: "US", orig: "KBOS", dest: "KJFK" },
+    { cs: "UAL1097", lat: 39.5, lng: -104.8, alt: 390, spd: 490, hdg: 80, co: "US", orig: "KDEN", dest: "KORD" },
+    { cs: "DAL587", lat: 35.2, lng: -90.4, alt: 360, spd: 460, hdg: 320, co: "US", orig: "KATL", dest: "KORD" },
+    { cs: "AAL1750", lat: 25.9, lng: -80.1, alt: 310, spd: 435, hdg: 350, co: "US", orig: "KMIA", dest: "KJFK" },
+    { cs: "BAW178", lat: 52.5, lng: -30.0, alt: 390, spd: 510, hdg: 280, co: "GB", orig: "EGLL", dest: "KJFK" },
+    { cs: "DLH402", lat: 53.0, lng: -18.0, alt: 400, spd: 495, hdg: 85, co: "DE", orig: "KJFK", dest: "EDDF" },
+    { cs: "AFR007", lat: 48.0, lng: -20.0, alt: 380, spd: 505, hdg: 275, co: "FR", orig: "LFPG", dest: "KJFK" },
+    { cs: "UAE205", lat: 35.0, lng: 40.0, alt: 400, spd: 510, hdg: 310, co: "AE", orig: "OMDB", dest: "KJFK" },
   ];
-
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 9; pass++) {
     for (const r of routes) {
-      const latV = (rand() - 0.5) * 6 * (pass + 1);
-      const lngV = (rand() - 0.5) * 8 * (pass + 1);
-      const altV = Math.floor((rand() - 0.5) * 6000);
-      const spdV = Math.floor((rand() - 0.5) * 40);
-      const hdgV = (rand() - 0.5) * 30;
+      const latV = (rand() - 0.5) * 5 * (pass + 1);
+      const lngV = (rand() - 0.5) * 7 * (pass + 1);
       const cs = r.cs + (pass === 0 ? "" : `${pass}`);
-      const icao = Math.floor(rand() * 0xffffff).toString(16).padStart(6, "0");
-
       flights.push({
-        id: icao, flightNumber: callsignToFlightNumber(cs), callsign: cs,
-        airline: lookupAirline(cs), origin: UNKNOWN_AIRPORT, destination: UNKNOWN_AIRPORT,
-        status: "en-route", departureTime: null, arrivalTime: null, aircraft: null,
-        altitude: Math.max(5000, r.alt + altV), speed: Math.max(200, r.spd + spdV),
-        heading: ((r.hdg + hdgV) % 360 + 360) % 360, progress: 0,
-        currentLat: r.lat + latV + (rand() - 0.5) * 2,
-        currentLng: r.lng + lngV + (rand() - 0.5) * 3,
-        icao24: icao, originCountry: r.co, onGround: false,
-        verticalRate: (rand() - 0.5) * 5, squawk: null,
-        geoAltitude: Math.max(5000, r.alt + altV + 200),
-        lastContact: Math.floor(Date.now() / 1000) - Math.floor(rand() * 10),
+        id: `fallback-${flights.length}`, flightNumber: cs, callsign: cs,
+        airline: lookupAirline(cs),
+        origin: { code: r.orig.slice(1), icao: r.orig, name: "", city: "", country: r.co, lat: 0, lng: 0 },
+        destination: { code: r.dest.slice(1), icao: r.dest, name: "", city: "", country: r.co, lat: 0, lng: 0 },
+        status: "en-route", scheduledDep: null, actualDep: null, scheduledArr: null,
+        estimatedArr: null, actualArr: null, aircraft: null, registration: null,
+        altitude: (r.alt + Math.floor((rand() - 0.5) * 40)) * 100,
+        speed: Math.max(200, r.spd + Math.floor((rand() - 0.5) * 40)),
+        heading: ((r.hdg + (rand() - 0.5) * 30) % 360 + 360) % 360,
+        progress: Math.floor(rand() * 100), currentLat: r.lat + latV, currentLng: r.lng + lngV,
+        originCountry: r.co, onGround: false, verticalRate: null, squawk: null,
+        geoAltitude: null, lastContact: Math.floor(Date.now() / 1000),
+        routeDistance: null,
       });
     }
   }
   return flights;
 }
 
-function parseOpenSkyStates(states: unknown[][]): Flight[] {
-  const flights: Flight[] = [];
-  for (const s of states) {
-    const lat = s[6] as number | null;
-    const lng = s[5] as number | null;
-    const onGround = s[8] as boolean;
-    if (lat == null || lng == null || onGround) continue;
-
-    const icao24 = (s[0] as string) || "";
-    const callsign = ((s[1] as string) || "").trim();
-    const originCountry = (s[2] as string) || "";
-    const baroAltitude = s[7] as number | null;
-    const velocity = s[9] as number | null;
-    const trueTrack = s[10] as number | null;
-    const verticalRate = s[11] as number | null;
-    const geoAltitude = s[13] as number | null;
-    const squawk = s[14] as string | null;
-    const lastContact = (s[4] as number) || 0;
-
-    flights.push({
-      id: icao24, flightNumber: callsignToFlightNumber(callsign), callsign,
-      airline: lookupAirline(callsign), origin: UNKNOWN_AIRPORT, destination: UNKNOWN_AIRPORT,
-      status: "en-route", departureTime: null, arrivalTime: null, aircraft: null,
-      altitude: baroAltitude != null ? Math.round(baroAltitude * 3.28084) : 0,
-      speed: velocity != null ? Math.round(velocity * 1.94384) : 0,
-      heading: trueTrack ?? 0, progress: 0, currentLat: lat, currentLng: lng,
-      icao24, originCountry, onGround: false, verticalRate, squawk,
-      geoAltitude: geoAltitude != null ? Math.round(geoAltitude * 3.28084) : null,
-      lastContact,
-    });
-  }
-  return flights;
-}
+// --- Main fetch function ---
 
 export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: string }> {
+  // Return cached if fresh
   if (cache && Date.now() - cache.timestamp < CACHE_TTL) {
     return { flights: cache.data, source: "cache" };
   }
 
+  const apiKey = process.env.FLIGHTAWARE_API_KEY;
+  if (!apiKey) {
+    console.warn("[SkyWay] FLIGHTAWARE_API_KEY not set — using fallback");
+    const fallback = generateFallbackFlights();
+    return { flights: fallback, source: "fallback" };
+  }
+
   try {
-    console.log("[SkyWay] Fetching OpenSky Network...");
-    const res = await fetch("https://opensky-network.org/api/states/all", {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
+    console.log("[SkyWay] Fetching FlightAware AeroAPI...");
+
+    // Fetch global en-route flights with position data
+    const url = `${FA_BASE}/flights/search?query=-latlong+"20 -130 65 60"&max_pages=1`;
+    const res = await fetch(url, {
+      headers: faHeaders(),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!res.ok) {
-      console.error(`[SkyWay] OpenSky HTTP ${res.status}`);
+      const body = await res.text().catch(() => "");
+      console.error(`[SkyWay] AeroAPI HTTP ${res.status}: ${body}`);
       if (cache) return { flights: cache.data, source: "stale-cache" };
-      console.log("[SkyWay] Using fallback flights");
       return { flights: generateFallbackFlights(), source: "fallback" };
     }
 
     const json = await res.json();
-    const states: unknown[][] = json.states || [];
-    console.log(`[SkyWay] ${states.length} state vectors received`);
+    const rawFlights: unknown[] = json.flights || [];
+    console.log(`[SkyWay] AeroAPI returned ${rawFlights.length} flights`);
 
-    const flights = parseOpenSkyStates(states);
-    console.log(`[SkyWay] ${flights.length} airborne flights`);
+    const flights: Flight[] = [];
+    for (const f of rawFlights) {
+      const mapped = transformFlight(f);
+      if (mapped && !mapped.onGround) flights.push(mapped);
+    }
+
+    console.log(`[SkyWay] ${flights.length} airborne flights after filtering`);
 
     cache = { data: flights, timestamp: Date.now() };
-    return { flights, source: "live" };
+    return { flights, source: "flightaware" };
   } catch (err) {
-    console.error("[SkyWay] OpenSky error:", err);
+    console.error("[SkyWay] AeroAPI error:", err);
     if (cache) return { flights: cache.data, source: "stale-cache" };
-    console.log("[SkyWay] Using fallback flights");
     return { flights: generateFallbackFlights(), source: "fallback" };
   }
 }

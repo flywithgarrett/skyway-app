@@ -1,5 +1,6 @@
 export interface Airport {
-  code: string;
+  code: string;       // IATA (e.g. "JFK")
+  icao: string;       // ICAO (e.g. "KJFK")
   name: string;
   city: string;
   country: string;
@@ -15,31 +16,38 @@ export interface Airline {
   fleet: string[];
 }
 
-export type FlightStatus = "en-route" | "on-ground" | "unknown";
+export type FlightStatus = "en-route" | "landed" | "scheduled" | "taxiing" | "unknown";
 
 export interface Flight {
-  id: string;
-  flightNumber: string;
+  id: string;              // fa_flight_id
+  flightNumber: string;    // ident (e.g. "UAL452")
   callsign: string;
   airline: Airline;
   origin: Airport;
   destination: Airport;
   status: FlightStatus;
-  departureTime: string | null;
-  arrivalTime: string | null;
-  aircraft: string | null;
-  altitude: number;
-  speed: number;
+  // Schedule times (ISO strings)
+  scheduledDep: string | null;
+  actualDep: string | null;
+  scheduledArr: string | null;
+  estimatedArr: string | null;
+  actualArr: string | null;
+  // Aircraft
+  aircraft: string | null;     // aircraft_type (e.g. "B738")
+  registration: string | null; // e.g. "N12345"
+  // Position
+  altitude: number;  // feet (hundreds)
+  speed: number;     // knots
   heading: number;
-  progress: number;
+  progress: number;  // 0-100
   currentLat: number;
   currentLng: number;
-  // OpenSky fields
-  icao24: string;
+  // Extras
   originCountry: string;
   onGround: boolean;
-  verticalRate: number | null;
+  verticalRate: number | null;  // fpm
   squawk: string | null;
   geoAltitude: number | null;
-  lastContact: number;
+  lastContact: number;          // unix timestamp
+  routeDistance: number | null;  // nm
 }

@@ -3,33 +3,33 @@ import { Airport, Airline } from "./types";
 // --- Static reference data (kept for globe airport markers) ---
 
 export const airports: Airport[] = [
-  { code: "JFK", name: "John F. Kennedy International", city: "New York", country: "US", lat: 40.6413, lng: -73.7781 },
-  { code: "LAX", name: "Los Angeles International", city: "Los Angeles", country: "US", lat: 33.9425, lng: -118.4081 },
-  { code: "ORD", name: "O'Hare International", city: "Chicago", country: "US", lat: 41.9742, lng: -87.9073 },
-  { code: "ATL", name: "Hartsfield-Jackson Atlanta International", city: "Atlanta", country: "US", lat: 33.6407, lng: -84.4277 },
-  { code: "DFW", name: "Dallas/Fort Worth International", city: "Dallas", country: "US", lat: 32.8998, lng: -97.0403 },
-  { code: "DEN", name: "Denver International", city: "Denver", country: "US", lat: 39.8561, lng: -104.6737 },
-  { code: "SFO", name: "San Francisco International", city: "San Francisco", country: "US", lat: 37.6213, lng: -122.379 },
-  { code: "SEA", name: "Seattle-Tacoma International", city: "Seattle", country: "US", lat: 47.4502, lng: -122.3088 },
-  { code: "MIA", name: "Miami International", city: "Miami", country: "US", lat: 25.7959, lng: -80.287 },
-  { code: "BOS", name: "Logan International", city: "Boston", country: "US", lat: 42.3656, lng: -71.0096 },
-  { code: "LHR", name: "Heathrow", city: "London", country: "UK", lat: 51.47, lng: -0.4543 },
-  { code: "CDG", name: "Charles de Gaulle", city: "Paris", country: "FR", lat: 49.0097, lng: 2.5479 },
-  { code: "FRA", name: "Frankfurt am Main", city: "Frankfurt", country: "DE", lat: 50.0379, lng: 8.5622 },
-  { code: "AMS", name: "Schiphol", city: "Amsterdam", country: "NL", lat: 52.3105, lng: 4.7683 },
-  { code: "DXB", name: "Dubai International", city: "Dubai", country: "AE", lat: 25.2532, lng: 55.3657 },
-  { code: "HND", name: "Haneda", city: "Tokyo", country: "JP", lat: 35.5494, lng: 139.7798 },
-  { code: "SIN", name: "Changi", city: "Singapore", country: "SG", lat: 1.3644, lng: 103.9915 },
-  { code: "ICN", name: "Incheon International", city: "Seoul", country: "KR", lat: 37.4602, lng: 126.4407 },
-  { code: "SYD", name: "Kingsford Smith", city: "Sydney", country: "AU", lat: -33.9461, lng: 151.1772 },
-  { code: "YYZ", name: "Toronto Pearson International", city: "Toronto", country: "CA", lat: 43.6777, lng: -79.6248 },
-  { code: "MEX", name: "Benito Juárez International", city: "Mexico City", country: "MX", lat: 19.4363, lng: -99.0721 },
-  { code: "GRU", name: "Guarulhos International", city: "São Paulo", country: "BR", lat: -23.4356, lng: -46.4731 },
-  { code: "IST", name: "Istanbul Airport", city: "Istanbul", country: "TR", lat: 41.2608, lng: 28.7418 },
-  { code: "DOH", name: "Hamad International", city: "Doha", country: "QA", lat: 25.2731, lng: 51.6081 },
-  { code: "HKG", name: "Hong Kong International", city: "Hong Kong", country: "HK", lat: 22.308, lng: 113.9185 },
-  { code: "DEL", name: "Indira Gandhi International", city: "New Delhi", country: "IN", lat: 28.5562, lng: 77.1 },
-  { code: "JNB", name: "O.R. Tambo International", city: "Johannesburg", country: "ZA", lat: -26.1392, lng: 28.246 },
+  { code: "JFK", icao: "KJFK", name: "John F. Kennedy International", city: "New York", country: "US", lat: 40.6413, lng: -73.7781 },
+  { code: "LAX", icao: "KLAX", name: "Los Angeles International", city: "Los Angeles", country: "US", lat: 33.9425, lng: -118.4081 },
+  { code: "ORD", icao: "KORD", name: "O'Hare International", city: "Chicago", country: "US", lat: 41.9742, lng: -87.9073 },
+  { code: "ATL", icao: "KATL", name: "Hartsfield-Jackson Atlanta International", city: "Atlanta", country: "US", lat: 33.6407, lng: -84.4277 },
+  { code: "DFW", icao: "KDFW", name: "Dallas/Fort Worth International", city: "Dallas", country: "US", lat: 32.8998, lng: -97.0403 },
+  { code: "DEN", icao: "KDEN", name: "Denver International", city: "Denver", country: "US", lat: 39.8561, lng: -104.6737 },
+  { code: "SFO", icao: "KSFO", name: "San Francisco International", city: "San Francisco", country: "US", lat: 37.6213, lng: -122.379 },
+  { code: "SEA", icao: "KSEA", name: "Seattle-Tacoma International", city: "Seattle", country: "US", lat: 47.4502, lng: -122.3088 },
+  { code: "MIA", icao: "KMIA", name: "Miami International", city: "Miami", country: "US", lat: 25.7959, lng: -80.287 },
+  { code: "BOS", icao: "KBOS", name: "Logan International", city: "Boston", country: "US", lat: 42.3656, lng: -71.0096 },
+  { code: "LHR", icao: "EGLL", name: "Heathrow", city: "London", country: "UK", lat: 51.47, lng: -0.4543 },
+  { code: "CDG", icao: "LFPG", name: "Charles de Gaulle", city: "Paris", country: "FR", lat: 49.0097, lng: 2.5479 },
+  { code: "FRA", icao: "EDDF", name: "Frankfurt am Main", city: "Frankfurt", country: "DE", lat: 50.0379, lng: 8.5622 },
+  { code: "AMS", icao: "EHAM", name: "Schiphol", city: "Amsterdam", country: "NL", lat: 52.3105, lng: 4.7683 },
+  { code: "DXB", icao: "OMDB", name: "Dubai International", city: "Dubai", country: "AE", lat: 25.2532, lng: 55.3657 },
+  { code: "HND", icao: "RJTT", name: "Haneda", city: "Tokyo", country: "JP", lat: 35.5494, lng: 139.7798 },
+  { code: "SIN", icao: "WSSS", name: "Changi", city: "Singapore", country: "SG", lat: 1.3644, lng: 103.9915 },
+  { code: "ICN", icao: "RKSI", name: "Incheon International", city: "Seoul", country: "KR", lat: 37.4602, lng: 126.4407 },
+  { code: "SYD", icao: "YSSY", name: "Kingsford Smith", city: "Sydney", country: "AU", lat: -33.9461, lng: 151.1772 },
+  { code: "YYZ", icao: "CYYZ", name: "Toronto Pearson International", city: "Toronto", country: "CA", lat: 43.6777, lng: -79.6248 },
+  { code: "MEX", icao: "MMMX", name: "Benito Juárez International", city: "Mexico City", country: "MX", lat: 19.4363, lng: -99.0721 },
+  { code: "GRU", icao: "SBGR", name: "Guarulhos International", city: "São Paulo", country: "BR", lat: -23.4356, lng: -46.4731 },
+  { code: "IST", icao: "LTFM", name: "Istanbul Airport", city: "Istanbul", country: "TR", lat: 41.2608, lng: 28.7418 },
+  { code: "DOH", icao: "OTHH", name: "Hamad International", city: "Doha", country: "QA", lat: 25.2731, lng: 51.6081 },
+  { code: "HKG", icao: "VHHH", name: "Hong Kong International", city: "Hong Kong", country: "HK", lat: 22.308, lng: 113.9185 },
+  { code: "DEL", icao: "VIDP", name: "Indira Gandhi International", city: "New Delhi", country: "IN", lat: 28.5562, lng: 77.1 },
+  { code: "JNB", icao: "FAOR", name: "O.R. Tambo International", city: "Johannesburg", country: "ZA", lat: -26.1392, lng: 28.246 },
 ];
 
 // --- Airline lookup from ICAO callsign prefix ---
@@ -91,7 +91,7 @@ export const UNKNOWN_AIRLINE: Airline = {
 };
 
 export const UNKNOWN_AIRPORT: Airport = {
-  code: "---", name: "Unknown", city: "---", country: "---", lat: 0, lng: 0,
+  code: "---", icao: "----", name: "Unknown", city: "---", country: "---", lat: 0, lng: 0,
 };
 
 export function lookupAirline(callsign: string): Airline {

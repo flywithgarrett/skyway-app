@@ -29,8 +29,11 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
           f.flightNumber.toLowerCase().includes(q) ||
           f.callsign.toLowerCase().includes(q) ||
           f.airline.name.toLowerCase().includes(q) ||
-          f.icao24.toLowerCase().includes(q) ||
-          f.originCountry.toLowerCase().includes(q)
+          f.origin.code.toLowerCase().includes(q) ||
+          f.destination.code.toLowerCase().includes(q) ||
+          f.origin.city.toLowerCase().includes(q) ||
+          f.destination.city.toLowerCase().includes(q) ||
+          (f.registration || "").toLowerCase().includes(q)
         )
         .slice(0, 20);
 
@@ -85,7 +88,7 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
                 )}
               </div>
               <div className="text-[11px] mt-0.5 text-white/30">
-                {flight.originCountry} · {flight.icao24.toUpperCase()} · {flight.altitude > 0 ? `${(flight.altitude/1000).toFixed(1)}k ft` : "GND"}
+                {flight.origin.code !== "---" ? `${flight.origin.code} → ${flight.destination.code}` : flight.originCountry} · {flight.altitude > 0 ? `${(flight.altitude/1000).toFixed(1)}k ft` : "GND"}
               </div>
             </div>
             <div className="shrink-0 text-right">
