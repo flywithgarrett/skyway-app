@@ -14,8 +14,8 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 2.4;
-const AIRCRAFT_SCALE_SELECTED = 5.0;
+const AIRCRAFT_SCALE = 1.6;
+const AIRCRAFT_SCALE_SELECTED = 3.0;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
 function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3 {
@@ -105,83 +105,57 @@ function createStars(): THREE.Points {
 }
 
 function createAircraftTexture(): THREE.Texture {
-  const size = 256;
+  const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  const cx = size / 2, cy = size / 2;
-
-  // Minimal radial glow — clean Apple-style
-  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.35);
-  g1.addColorStop(0, "rgba(255, 255, 255, 0.04)");
-  g1.addColorStop(0.3, "rgba(0, 229, 255, 0.01)");
-  g1.addColorStop(1, "rgba(0, 0, 0, 0)");
-  ctx.fillStyle = g1;
-  ctx.fillRect(0, 0, size, size);
 
   ctx.save();
-  ctx.translate(cx, cy);
+  ctx.translate(size / 2, size / 2);
 
-  // Precise Boeing 787 / A350 top-down SVG-quality silhouette
-  // Scale: nose at -s*2.0, tail at s*1.6, wingspan ±s*1.7
-  const s = size * 0.14;
+  // Clean filled plane icon — like FlightAware's bold silhouette
+  // Designed to read clearly at 8-20px on screen
+  const s = size * 0.38;
 
-  const drawPrecisePlane = () => {
+  const drawPlane = () => {
     ctx.beginPath();
-    // Nose cone — sharp pointed
-    ctx.moveTo(0, -s * 2.0);
-    // Right fuselage
-    ctx.bezierCurveTo(s * 0.08, -s * 1.7, s * 0.14, -s * 1.0, s * 0.14, -s * 0.3);
-    // Right wing root leading edge
-    ctx.lineTo(s * 0.16, -s * 0.15);
-    // Right wing tip — long swept
-    ctx.bezierCurveTo(s * 0.5, -s * 0.05, s * 1.2, s * 0.25, s * 1.7, s * 0.45);
-    // Right wing trailing edge
-    ctx.lineTo(s * 1.65, s * 0.55);
-    ctx.bezierCurveTo(s * 1.1, s * 0.4, s * 0.5, s * 0.2, s * 0.16, s * 0.15);
-    // Right fuselage continues aft
-    ctx.lineTo(s * 0.14, s * 1.0);
-    // Right horizontal stabilizer
-    ctx.lineTo(s * 0.13, s * 1.15);
-    ctx.bezierCurveTo(s * 0.3, s * 1.2, s * 0.55, s * 1.35, s * 0.6, s * 1.45);
-    ctx.lineTo(s * 0.58, s * 1.52);
-    ctx.bezierCurveTo(s * 0.4, s * 1.45, s * 0.2, s * 1.35, s * 0.1, s * 1.3);
-    // Tail cone
-    ctx.lineTo(s * 0.06, s * 1.6);
-    ctx.lineTo(-s * 0.06, s * 1.6);
-    // Left horizontal stabilizer
-    ctx.lineTo(-s * 0.1, s * 1.3);
-    ctx.bezierCurveTo(-s * 0.2, s * 1.35, -s * 0.4, s * 1.45, -s * 0.58, s * 1.52);
-    ctx.lineTo(-s * 0.6, s * 1.45);
-    ctx.bezierCurveTo(-s * 0.55, s * 1.35, -s * 0.3, s * 1.2, -s * 0.13, s * 1.15);
-    ctx.lineTo(-s * 0.14, s * 1.0);
-    // Left fuselage
-    ctx.lineTo(-s * 0.16, s * 0.15);
-    // Left wing trailing edge
-    ctx.bezierCurveTo(-s * 0.5, s * 0.2, -s * 1.1, s * 0.4, -s * 1.65, s * 0.55);
-    ctx.lineTo(-s * 1.7, s * 0.45);
-    // Left wing leading edge
-    ctx.bezierCurveTo(-s * 1.2, s * 0.25, -s * 0.5, -s * 0.05, -s * 0.16, -s * 0.15);
-    ctx.lineTo(-s * 0.14, -s * 0.3);
-    // Left fuselage to nose
-    ctx.bezierCurveTo(-s * 0.14, -s * 1.0, -s * 0.08, -s * 1.7, 0, -s * 2.0);
+    // Nose
+    ctx.moveTo(0, -s * 0.85);
+    // Right fuselage to wing
+    ctx.lineTo(s * 0.10, -s * 0.55);
+    // Right wing — bold swept
+    ctx.lineTo(s * 0.75, s * 0.05);
+    ctx.lineTo(s * 0.70, s * 0.15);
+    // Back to fuselage
+    ctx.lineTo(s * 0.10, -s * 0.05);
+    // Right fuselage aft
+    ctx.lineTo(s * 0.08, s * 0.50);
+    // Right tail
+    ctx.lineTo(s * 0.32, s * 0.72);
+    ctx.lineTo(s * 0.28, s * 0.82);
+    // Tail center
+    ctx.lineTo(s * 0.05, s * 0.65);
+    ctx.lineTo(0, s * 0.85);
+    // Left tail
+    ctx.lineTo(-s * 0.05, s * 0.65);
+    ctx.lineTo(-s * 0.28, s * 0.82);
+    ctx.lineTo(-s * 0.32, s * 0.72);
+    ctx.lineTo(-s * 0.08, s * 0.50);
+    // Left fuselage aft
+    ctx.lineTo(-s * 0.10, -s * 0.05);
+    // Left wing
+    ctx.lineTo(-s * 0.70, s * 0.15);
+    ctx.lineTo(-s * 0.75, s * 0.05);
+    ctx.lineTo(-s * 0.10, -s * 0.55);
     ctx.closePath();
     ctx.fill();
   };
 
-  // Clean pass: crisp white plane with subtle cyan edge glow
-  ctx.shadowColor = "rgba(0, 229, 255, 0.25)";
-  ctx.shadowBlur = 4;
-  ctx.fillStyle = "rgba(220, 240, 255, 0.85)";
-  drawPrecisePlane();
-
-  // Second pass: bright white core, no glow
-  ctx.shadowColor = "transparent";
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-  drawPrecisePlane();
+  // Golden amber fill — like FlightAware's warm orange planes
+  ctx.fillStyle = "rgba(245, 190, 70, 0.95)";
+  drawPlane();
 
   ctx.restore();
 
@@ -343,16 +317,34 @@ export default function Globe({
       const g = new THREE.Mesh(gGeo, gMat); g.position.copy(p); airportGroup.add(g);
     });
 
+    // Cloud / weather overlay — semi-transparent layer above globe
+    const cloudGeo = new THREE.SphereGeometry(RADIUS * 1.008, 96, 96);
+    const cloudMat = new THREE.MeshBasicMaterial({
+      transparent: true, opacity: 0, depthWrite: false, blending: THREE.NormalBlending,
+    });
+    const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+    scene.add(cloudMesh);
+    loader.load(
+      "https://unpkg.com/three-globe@2.31.1/example/img/earth-clouds.png",
+      (cloudTex) => {
+        cloudTex.colorSpace = THREE.SRGBColorSpace;
+        cloudTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        cloudMat.map = cloudTex;
+        cloudMat.opacity = 0.25;
+        cloudMat.needsUpdate = true;
+      }
+    );
+
     // Aircraft InstancedMesh — capacity for live data updates
     const MAX_FLIGHTS = 4000;
     const aircraftTexture = createAircraftTexture();
     const airborne = flightsRef.current.filter(
       (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
-    // BoxGeometry with tiny depth for reliable raycasting from all camera angles
-    const planeGeo = new THREE.BoxGeometry(1, 1, 0.01);
+    // Larger hitbox for reliable click detection
+    const planeGeo = new THREE.BoxGeometry(1.8, 1.8, 0.01);
     const planeMat = new THREE.MeshBasicMaterial({
-      map: aircraftTexture, transparent: true, alphaTest: 0.05,
+      map: aircraftTexture, transparent: true, alphaTest: 0.02,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.NormalBlending,
     });
     const aircraftMesh = new THREE.InstancedMesh(planeGeo, planeMat, MAX_FLIGHTS);
