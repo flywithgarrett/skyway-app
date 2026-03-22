@@ -185,12 +185,12 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
                   </div>
                 </div>
                 <div className="mt-2 border-t border-white/[0.04] pt-2">
-                  <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled</div>
-                  <div className="text-sm font-mono text-glow-cyan">{detail.departure.times.scheduled}</div>
+                  <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Dep</div>
+                  <div className="text-[12px] font-mono text-white/40">{detail.departure.times.scheduled}</div>
                   {detail.departure.times.actual && (
                     <>
-                      <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1 mb-0.5">Actual</div>
-                      <div className="text-sm font-mono text-white/60">{detail.departure.times.actual}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1.5 mb-0.5">Actual Dep</div>
+                      <div className="text-[15px] font-mono font-semibold text-glow-cyan">{detail.departure.times.actual}</div>
                     </>
                   )}
                 </div>
@@ -235,14 +235,14 @@ export default function FlightDetailPanel({ flight, onClose }: FlightDetailPanel
                   </div>
                 </div>
                 <div className="mt-2 border-t border-white/[0.04] pt-2">
-                  <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled</div>
-                  <div className="text-sm font-mono text-glow-cyan">{detail.arrival.times.scheduled}</div>
+                  <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Arr</div>
+                  <div className="text-[12px] font-mono text-white/40">{detail.arrival.times.scheduled}</div>
                   {(detail.arrival.times.estimated || detail.arrival.times.actual) && (
                     <>
-                      <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1 mb-0.5">
-                        {detail.arrival.times.actual ? "Actual" : "Estimated"}
+                      <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1.5 mb-0.5">
+                        {detail.arrival.times.actual ? "Actual Arr" : "Estimated Arr"}
                       </div>
-                      <div className="text-sm font-mono text-white/60">
+                      <div className="text-[15px] font-mono font-semibold text-glow-cyan">
                         {detail.arrival.times.actual || detail.arrival.times.estimated}
                       </div>
                     </>
