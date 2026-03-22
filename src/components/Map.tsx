@@ -36,7 +36,7 @@ interface MapProps {
   onSelectFlight: (flight: Flight | null) => void;
 }
 
-export default function Map({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
+export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const flightMarkersRef = useRef<Map<string, L.Marker>>(new Map());
