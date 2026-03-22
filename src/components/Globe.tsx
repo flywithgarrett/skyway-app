@@ -274,31 +274,28 @@ export default function Globe({
       const g = new THREE.Mesh(gGeo, gMat); g.position.copy(p); airportGroup.add(g);
     });
 
-    // Aircraft InstancedMesh
+    // Aircraft InstancedMesh — capacity for live data updates
+    const MAX_FLIGHTS = 12000;
     const aircraftTexture = createAircraftTexture();
     const airborne = flightsRef.current.filter(
-      (f) => f.status === "en-route" || (f.progress > 0 && f.progress < 1)
+      (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
     const planeGeo = new THREE.PlaneGeometry(1, 1);
     const planeMat = new THREE.MeshBasicMaterial({
       map: aircraftTexture, transparent: true, alphaTest: 0.01,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
     });
-    const aircraftMesh = new THREE.InstancedMesh(planeGeo, planeMat, airborne.length);
+    const aircraftMesh = new THREE.InstancedMesh(planeGeo, planeMat, MAX_FLIGHTS);
     aircraftMesh.frustumCulled = false;
+    aircraftMesh.count = Math.min(airborne.length, MAX_FLIGHTS);
 
     // Per-instance colors for highlighting
-    const instanceColors = new Float32Array(airborne.length * 3);
-    for (let i = 0; i < airborne.length; i++) {
-      instanceColors[i * 3] = 1; instanceColors[i * 3 + 1] = 1; instanceColors[i * 3 + 2] = 1;
-    }
+    const instanceColors = new Float32Array(MAX_FLIGHTS * 3).fill(1);
     aircraftMesh.instanceColor = new THREE.InstancedBufferAttribute(instanceColors, 3);
 
     airborne.forEach((f, i) => {
-      const heading = f.progress < 0.99
-        ? computeBearing(f.currentLat, f.currentLng, f.destination.lat, f.destination.lng)
-        : f.heading;
-      aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+      if (i >= MAX_FLIGHTS) return;
+      aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
     });
     aircraftMesh.instanceMatrix.needsUpdate = true;
     scene.add(aircraftMesh);
@@ -329,10 +326,7 @@ export default function Globe({
       const intersects = raycaster.intersectObject(aircraftMesh);
       if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
         const idx = intersects[0].instanceId;
-        const currentAirborne = flightsRef.current.filter(
-          (f) => f.status === "en-route" || (f.progress > 0 && f.progress < 1)
-        );
-        const flight = currentAirborne[idx];
+        const flight = sceneDataRef.current?.airborneFlights[idx];
         if (flight) {
           onSelectRef.current(selectedRef.current?.id === flight.id ? null : flight);
         }
@@ -414,6 +408,28 @@ export default function Globe({
     };
   }, []);
 
+  // --- Update aircraft when live flights change ---
+  useEffect(() => {
+    const data = sceneDataRef.current;
+    if (!data) return;
+    const airborne = flights.filter(
+      (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
+    );
+    const count = Math.min(airborne.length, 12000);
+    data.airborneFlights = airborne;
+    data.aircraftMesh.count = count;
+    for (let i = 0; i < count; i++) {
+      const f = airborne[i];
+      data.aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+      data.instanceColors[i * 3] = 1;
+      data.instanceColors[i * 3 + 1] = 1;
+      data.instanceColors[i * 3 + 2] = 1;
+    }
+    data.aircraftMesh.instanceMatrix.needsUpdate = true;
+    if (data.aircraftMesh.instanceColor)
+      (data.aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
+  }, [flights]);
+
   // --- Selection: jetstream, camera, highlighting ---
   useEffect(() => {
     const data = sceneDataRef.current;
@@ -432,88 +448,60 @@ export default function Globe({
 
     if (!selectedFlight) {
       // Reset all aircraft to full brightness and normal scale
-      for (let i = 0; i < airborneFlights.length; i++) {
+      const count = Math.min(airborneFlights.length, 12000);
+      for (let i = 0; i < count; i++) {
         instanceColors[i * 3] = 1; instanceColors[i * 3 + 1] = 1; instanceColors[i * 3 + 2] = 1;
-        // Restore original scale
         const f = airborneFlights[i];
-        const heading = f.progress < 0.99
-          ? computeBearing(f.currentLat, f.currentLng, f.destination.lat, f.destination.lng)
-          : f.heading;
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
       }
       if (aircraftMesh.instanceColor) (aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
       aircraftMesh.instanceMatrix.needsUpdate = true;
       return;
     }
 
-    // Find selected index
     const selectedIdx = airborneFlights.findIndex((f) => f.id === selectedFlight.id);
+    const count = Math.min(airborneFlights.length, 12000);
 
-    // Update instance colors and scale
-    for (let i = 0; i < airborneFlights.length; i++) {
+    for (let i = 0; i < count; i++) {
       const f = airborneFlights[i];
-      const heading = f.progress < 0.99
-        ? computeBearing(f.currentLat, f.currentLng, f.destination.lat, f.destination.lng)
-        : f.heading;
-
       if (i === selectedIdx) {
-        // Selected: bright glow + larger scale
         instanceColors[i * 3] = 1.6; instanceColors[i * 3 + 1] = 1.6; instanceColors[i * 3 + 2] = 1.6;
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, heading, AIRCRAFT_ALT, AIRCRAFT_SCALE_SELECTED));
+        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE_SELECTED));
       } else {
-        // Dimmed by ~60%
         instanceColors[i * 3] = 0.18; instanceColors[i * 3 + 1] = 0.18; instanceColors[i * 3 + 2] = 0.22;
-        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
+        aircraftMesh.setMatrixAt(i, buildSurfaceMatrix(f.currentLat, f.currentLng, f.heading, AIRCRAFT_ALT, AIRCRAFT_SCALE));
       }
     }
     if (aircraftMesh.instanceColor) (aircraftMesh.instanceColor as THREE.InstancedBufferAttribute).needsUpdate = true;
     aircraftMesh.instanceMatrix.needsUpdate = true;
 
-    // --- Jetstream route arc ---
-    const arcPoints = greatCirclePoints(
-      selectedFlight.origin.lat, selectedFlight.origin.lng,
-      selectedFlight.destination.lat, selectedFlight.destination.lng,
-      100, 6
-    );
-    if (arcPoints.length > 2) {
-      const curve = new THREE.CatmullRomCurve3(arcPoints, false, "catmullrom", 0.5);
-      const tubeGeo = new THREE.TubeGeometry(curve, 120, 0.35, 8, false);
-      const tubeMat = new THREE.ShaderMaterial({
-        vertexShader: jetstreamVertex,
-        fragmentShader: jetstreamFragment,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        uniforms: { uTime: { value: data.clock.getElapsedTime() } },
-      });
-      const jetstream = new THREE.Mesh(tubeGeo, tubeMat);
-      data.scene.add(jetstream);
-      data.jetstream = jetstream;
-      data.jetstreamMat = tubeMat;
+    // Jetstream route arc (only if origin and destination are known)
+    const hasRoute = selectedFlight.origin.code !== "---" && selectedFlight.destination.code !== "---";
+    if (hasRoute) {
+      const arcPoints = greatCirclePoints(
+        selectedFlight.origin.lat, selectedFlight.origin.lng,
+        selectedFlight.destination.lat, selectedFlight.destination.lng,
+        100, 6
+      );
+      if (arcPoints.length > 2) {
+        const curve = new THREE.CatmullRomCurve3(arcPoints, false, "catmullrom", 0.5);
+        const tubeGeo = new THREE.TubeGeometry(curve, 120, 0.35, 8, false);
+        const tubeMat = new THREE.ShaderMaterial({
+          vertexShader: jetstreamVertex, fragmentShader: jetstreamFragment,
+          transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+          side: THREE.DoubleSide,
+          uniforms: { uTime: { value: data.clock.getElapsedTime() } },
+        });
+        const jetstream = new THREE.Mesh(tubeGeo, tubeMat);
+        data.scene.add(jetstream);
+        data.jetstream = jetstream;
+        data.jetstreamMat = tubeMat;
+      }
     }
 
-    // --- Cinematic camera framing ---
-    // Compute centroid of origin, aircraft, destination
-    const p1 = latLngTo3D(selectedFlight.origin.lat, selectedFlight.origin.lng, 1);
-    const p2 = latLngTo3D(selectedFlight.currentLat, selectedFlight.currentLng, 1);
-    const p3 = latLngTo3D(selectedFlight.destination.lat, selectedFlight.destination.lng, 1);
-    const centroid = new THREE.Vector3().addVectors(p1, p2).add(p3).normalize();
-
-    // Compute angular spread to determine distance
-    const dot12 = p1.dot(p2);
-    const dot13 = p1.dot(p3);
-    const dot23 = p2.dot(p3);
-    const minDot = Math.min(dot12, dot13, dot23);
-    const angularSpread = Math.acos(THREE.MathUtils.clamp(minDot, -1, 1));
-
-    // Camera distance: farther for wider spreads
-    const camDist = THREE.MathUtils.clamp(
-      RADIUS / Math.sin(Math.max(angularSpread / 2, 0.2)) * 0.85,
-      140, 350
-    );
-
-    const camTarget = centroid.clone().multiplyScalar(camDist);
+    // Cinematic camera: center on the aircraft position
+    const camCenter = latLngTo3D(selectedFlight.currentLat, selectedFlight.currentLng, 1).normalize();
+    const camTarget = camCenter.multiplyScalar(175);
     cameraAnimRef.current = { targetPos: camTarget };
 
   }, [selectedFlight]);

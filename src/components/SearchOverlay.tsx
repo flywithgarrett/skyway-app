@@ -13,14 +13,10 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
@@ -29,20 +25,17 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
   const results = q.length < 1
     ? []
     : flights
-        .filter(
-          (f) =>
-            f.flightNumber.toLowerCase().includes(q) ||
-            f.airline.name.toLowerCase().includes(q) ||
-            f.origin.code.toLowerCase().includes(q) ||
-            f.destination.code.toLowerCase().includes(q) ||
-            f.origin.city.toLowerCase().includes(q) ||
-            f.destination.city.toLowerCase().includes(q)
+        .filter((f) =>
+          f.flightNumber.toLowerCase().includes(q) ||
+          f.callsign.toLowerCase().includes(q) ||
+          f.airline.name.toLowerCase().includes(q) ||
+          f.icao24.toLowerCase().includes(q) ||
+          f.originCountry.toLowerCase().includes(q)
         )
         .slice(0, 20);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col glass-overlay">
-      {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 glass-bar">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" strokeWidth="2" strokeLinecap="round" style={{ filter: "drop-shadow(0 0 4px rgba(0,229,255,0.3))" }}>
           <circle cx="11" cy="11" r="8" />
@@ -53,7 +46,7 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search flights, airports, airlines..."
+          placeholder="Search by callsign, airline, ICAO24, country..."
           className="flex-1 bg-transparent outline-none text-sm text-white/80 placeholder:text-white/20"
         />
         <button onClick={onClose} className="text-xs font-medium px-2.5 py-1 rounded-xl text-glow-cyan glass-button">
@@ -61,7 +54,6 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
         </button>
       </div>
 
-      {/* Results */}
       <div className="flex-1 overflow-y-auto">
         {q.length > 0 && results.length === 0 && (
           <div className="text-center py-16 text-sm text-white/25">
@@ -72,10 +64,7 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
         {results.map((flight) => (
           <button
             key={flight.id}
-            onClick={() => {
-              onSelect(flight);
-              onClose();
-            }}
+            onClick={() => { onSelect(flight); onClose(); }}
             className="w-full flex items-center gap-3 px-4 py-3 transition-all hover:bg-white/[0.03] text-left"
             style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.03)" }}
           >
@@ -91,27 +80,16 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm text-glow-cyan">{flight.flightNumber}</span>
-                <span className="text-[10px] text-white/25">{flight.airline.name}</span>
+                {flight.airline.code !== "??" && (
+                  <span className="text-[10px] text-white/25">{flight.airline.name}</span>
+                )}
               </div>
               <div className="text-[11px] mt-0.5 text-white/30">
-                {flight.origin.code} ({flight.origin.city}) → {flight.destination.code} ({flight.destination.city})
+                {flight.originCountry} · {flight.icao24.toUpperCase()} · {flight.altitude > 0 ? `${(flight.altitude/1000).toFixed(1)}k ft` : "GND"}
               </div>
             </div>
-            <div className="shrink-0">
-              <span
-                className="text-[9px] font-semibold uppercase px-2 py-0.5 rounded-full tracking-wide"
-                style={{
-                  color: flight.status === "en-route" ? "#34d399" : flight.status === "delayed" ? "#ef4444" : "#00e5ff",
-                  background:
-                    flight.status === "en-route"
-                      ? "rgba(52,211,153,0.08)"
-                      : flight.status === "delayed"
-                        ? "rgba(239,68,68,0.08)"
-                        : "rgba(0,229,255,0.08)",
-                }}
-              >
-                {flight.status}
-              </span>
+            <div className="shrink-0 text-right">
+              <div className="text-[10px] font-mono text-white/30">{flight.speed} kts</div>
             </div>
           </button>
         ))}
@@ -119,7 +97,7 @@ export default function SearchOverlay({ flights, onSelect, onClose }: SearchOver
         {q.length === 0 && (
           <div className="text-center py-16">
             <div className="text-white/20 text-sm">Start typing to search flights...</div>
-            <div className="text-white/10 text-[10px] mt-2">Search by flight number, airline, airport code, or city</div>
+            <div className="text-white/10 text-[10px] mt-2">Search by callsign, airline name, ICAO24 address, or country</div>
           </div>
         )}
       </div>
