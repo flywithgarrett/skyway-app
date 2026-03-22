@@ -127,17 +127,12 @@ export async function fetchLiveFlights(): Promise<{ flights: Flight[]; source: s
     const rawFlights: unknown[] = json.flights || [];
     console.log(`[SkyWay] AeroAPI returned ${rawFlights.length} raw flights`);
 
-    // Server-side filtering: commercial airliners over North America
+    // Server-side filtering: airborne flights over North America
     const flights: Flight[] = [];
     for (const f of rawFlights) {
       if (flights.length >= MAX_FLIGHTS) break;
       const mapped = transformFlight(f);
       if (!mapped || mapped.onGround) continue;
-      // Require 3-letter ICAO airline prefix (UAL, DAL, AAL) — skip GA tail numbers
-      const cs = mapped.callsign;
-      if (!cs || cs.length < 4 || !/^[A-Z]{3}/.test(cs)) continue;
-      // Altitude filter: above FL200 (20,000 ft) — skip low GA/helicopters
-      if (mapped.altitude < 20000) continue;
       // Geographic bounding box: North America (lat 24-50, lng -130 to -60)
       if (mapped.currentLat < 24 || mapped.currentLat > 50 || mapped.currentLng < -130 || mapped.currentLng > -60) continue;
       flights.push(mapped);
