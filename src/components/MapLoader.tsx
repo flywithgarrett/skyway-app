@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { Flight, Airport } from "@/lib/types";
 
-const FlightMap = dynamic(() => import("./Map"), { ssr: false });
+const Globe = dynamic(() => import("./Globe"), { ssr: false });
 
 interface MapLoaderProps {
   flights: Flight[];
@@ -13,5 +13,5 @@ interface MapLoaderProps {
 }
 
 export default function MapLoader(props: MapLoaderProps) {
-  return <FlightMap {...props} />;
+  return <Globe {...props} />;
 }
