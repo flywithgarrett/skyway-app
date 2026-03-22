@@ -159,6 +159,60 @@ body {
   background: rgba(0, 229, 255, 0.08);
 }
 
+/* === Detail panel slide-in === */
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.detail-panel-slide {
+  animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.glass-detail-panel {
+  background: rgba(8, 14, 28, 0.82);
+  backdrop-filter: blur(40px) saturate(1.6);
+  -webkit-backdrop-filter: blur(40px) saturate(1.6);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    -8px 0 40px rgba(0, 0, 0, 0.5),
+    inset 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+/* === View Full Details button === */
+
+.detail-view-btn {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(59, 184, 232, 0.04));
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  color: #00e5ff;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.06);
+}
+
+.detail-view-btn:hover {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.14), rgba(59, 184, 232, 0.08));
+  border-color: rgba(0, 229, 255, 0.25);
+  box-shadow: 0 0 24px rgba(0, 229, 255, 0.1);
+}
+
+/* === Recharts overrides === */
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(255, 255, 255, 0.02) !important;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
 /* Canvas override */
 canvas {
   outline: none !important;

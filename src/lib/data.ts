@@ -1,4 +1,12 @@
-import { Airport, Airline, Flight, FlightStatus } from "./types";
+import {
+  Airport,
+  Airline,
+  Flight,
+  FlightStatus,
+  FlightDetail,
+  TelemetryPoint,
+  FlightHistoryEntry,
+} from "./types";
 
 export const airports: Airport[] = [
   { code: "JFK", name: "John F. Kennedy International", city: "New York", country: "US", lat: 40.6413, lng: -73.7781 },
@@ -199,4 +207,236 @@ export function generateFlights(count: number = 1000): Flight[] {
   }
 
   return flights;
+}
+
+// --- Detailed flight info generator (mock data for deep-dive panel) ---
+
+const terminals = ["A", "B", "C", "D", "E", "T1", "T2", "T3", "T4", "T5"];
+const runways = ["09L/27R", "09R/27L", "10L/28R", "04R/22L", "07L/25R", "01L/19R", "13R/31L"];
+const registrations: Record<string, string[]> = {
+  AA: ["N787AL", "N835AN", "N920NN", "N102NN"],
+  DL: ["N501DN", "N667US", "N861NW", "N195DN"],
+  UA: ["N2747U", "N12006", "N37018", "N27901"],
+  BA: ["G-XLEA", "G-CIVB", "G-ZBJB", "G-NEOR"],
+  LH: ["D-AIMK", "D-AIXA", "D-ABYM", "D-AINY"],
+  AF: ["F-HTYA", "F-GSPA", "F-GZNE", "F-HTYB"],
+  EK: ["A6-EUF", "A6-EOM", "A6-EPE", "A6-EVA"],
+  QR: ["A7-ANA", "A7-BCA", "A7-ALN", "A7-ANB"],
+  SQ: ["9V-SKA", "9V-SMA", "9V-SWA", "9V-SGB"],
+  NH: ["JA731A", "JA784A", "JA891A", "JA871A"],
+  KE: ["HL7614", "HL7628", "HL8226", "HL8275"],
+  QF: ["VH-OQA", "VH-ZNA", "VH-EBB", "VH-OQF"],
+  AC: ["C-FGDZ", "C-FITW", "C-FRSA", "C-GHLM"],
+  TK: ["TC-LGA", "TC-JJR", "TC-LJA", "TC-LGB"],
+  KL: ["PH-BHA", "PH-AKF", "PH-BVA", "PH-BHC"],
+  AM: ["XA-ADG", "N842AM", "XA-MAJ", "XA-ADH"],
+  LA: ["CC-BGI", "PT-MUA", "CC-BGJ", "CC-BBG"],
+  SA: ["ZS-SXB", "ZS-SNG", "ZS-SXD", "ZS-SXC"],
+};
+
+function fmtTime(h: number, m: number): string {
+  return `${Math.floor(((h % 24) + 24) % 24).toString().padStart(2, "0")}:${Math.floor(m % 60).toString().padStart(2, "0")}`;
+}
+
+function haversineNm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3440.065; // Earth radius in nm
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+export function generateFlightDetail(flight: Flight): FlightDetail {
+  const rand = seededRandom(
+    flight.id.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
+  );
+
+  const depH = parseInt(flight.departureTime.split(":")[0]);
+  const depM = parseInt(flight.departureTime.split(":")[1]);
+  const arrH = parseInt(flight.arrivalTime.split(":")[0]);
+  const arrM = parseInt(flight.arrivalTime.split(":")[1]);
+
+  // Gate info
+  const depTerminal = terminals[Math.floor(rand() * terminals.length)];
+  const depGate = `${depTerminal}${Math.floor(1 + rand() * 45)}`;
+  const arrTerminal = terminals[Math.floor(rand() * terminals.length)];
+  const arrGate = `${arrTerminal}${Math.floor(1 + rand() * 45)}`;
+
+  // Time deltas for realism
+  const depDelay = flight.status === "delayed" ? Math.floor(5 + rand() * 55) : Math.floor(rand() * 8) - 2;
+  const arrDelay = depDelay + Math.floor(rand() * 10) - 3;
+
+  const depActualH = depH;
+  const depActualM = depM + depDelay;
+  const arrEstH = arrH;
+  const arrEstM = arrM + arrDelay;
+
+  // Distance
+  const distanceNm = Math.round(
+    haversineNm(flight.origin.lat, flight.origin.lng, flight.destination.lat, flight.destination.lng)
+  );
+  const distanceRemaining = Math.round(distanceNm * (1 - flight.progress));
+
+  // Flight time
+  let totalMinutes = (arrH - depH) * 60 + (arrM - depM);
+  if (totalMinutes <= 0) totalMinutes += 24 * 60;
+  const elapsedMinutes = Math.round(totalMinutes * flight.progress);
+  const remainingMinutes = totalMinutes - elapsedMinutes;
+
+  // Telemetry — generate realistic altitude/speed profile
+  const telemetry: TelemetryPoint[] = [];
+  const cruiseAlt = flight.altitude > 0 ? flight.altitude : 35000;
+  const cruiseSpeed = flight.speed > 0 ? flight.speed : 480;
+  const points = Math.min(Math.max(Math.round(totalMinutes / 5), 8), 60);
+
+  for (let i = 0; i <= points; i++) {
+    const t = i / points;
+    const mins = Math.round(t * totalMinutes);
+    const h = depH + Math.floor((depM + mins) / 60);
+    const m = (depM + mins) % 60;
+
+    let alt: number;
+    let spd: number;
+
+    if (t < 0.08) {
+      // Climb phase
+      const climbT = t / 0.08;
+      alt = Math.round(climbT * climbT * cruiseAlt);
+      spd = Math.round(180 + climbT * (cruiseSpeed - 180));
+    } else if (t > 0.88) {
+      // Descent phase
+      const descT = (t - 0.88) / 0.12;
+      alt = Math.round(cruiseAlt * (1 - descT * descT));
+      spd = Math.round(cruiseSpeed - descT * (cruiseSpeed - 160));
+    } else {
+      // Cruise — minor turbulence variation
+      alt = Math.round(cruiseAlt + (rand() - 0.5) * 800);
+      spd = Math.round(cruiseSpeed + (rand() - 0.5) * 20);
+    }
+
+    telemetry.push({
+      timestamp: fmtTime(h, m),
+      altitude: Math.max(0, alt),
+      speed: Math.max(0, spd),
+      minutesElapsed: mins,
+    });
+  }
+
+  // Aircraft info
+  const regs = registrations[flight.airline.code] || ["N/A"];
+  const reg = regs[Math.floor(rand() * regs.length)];
+  const icaoChars = "0123456789ABCDEF";
+  let icao24 = "";
+  for (let i = 0; i < 6; i++) icao24 += icaoChars[Math.floor(rand() * 16)];
+
+  // Squawk code
+  const squawk = (1000 + Math.floor(rand() * 6777)).toString().padStart(4, "0");
+
+  // Seat config
+  const configs: Record<string, string> = {
+    "A380-800": "F14 J76 W56 Y343",
+    "B777-300ER": "F8 J42 W24 Y232",
+    "A350-900": "J36 W24 Y219",
+    "B787-9": "C30 W21 Y198",
+    "B787-10": "J44 W24 Y228",
+    "A350-1000": "J46 W32 Y262",
+    "A321neo": "J20 Y165",
+    "B737-800": "Y175",
+    "A320neo": "Y168",
+    "B737-900ER": "F16 Y160",
+    "A321-200": "J20 Y158",
+  };
+
+  // Flight history
+  const flightHistory: FlightHistoryEntry[] = [];
+  const historyStatuses: FlightStatus[] = ["landed", "on-time", "delayed", "landed"];
+  for (let i = 0; i < 5; i++) {
+    const daysAgo = i + 1;
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    const o = airports[Math.floor(rand() * airports.length)];
+    let d = airports[Math.floor(rand() * airports.length)];
+    while (d.code === o.code) d = airports[Math.floor(rand() * airports.length)];
+    const hStatus = historyStatuses[Math.floor(rand() * historyStatuses.length)];
+    const hDepH = Math.floor(rand() * 24);
+    const hDepM = Math.floor(rand() * 60);
+    const dur = 1 + Math.floor(rand() * 12);
+
+    flightHistory.push({
+      flightNumber: `${flight.airline.code}${100 + Math.floor(rand() * 9900)}`,
+      date: date.toISOString().split("T")[0],
+      origin: o.code,
+      destination: d.code,
+      status: hStatus,
+      departureTime: fmtTime(hDepH, hDepM),
+      arrivalTime: fmtTime(hDepH + dur, Math.floor(rand() * 60)),
+    });
+  }
+
+  // Upcoming flights
+  const upcomingFlights: FlightHistoryEntry[] = [];
+  for (let i = 0; i < 3; i++) {
+    const daysAhead = i + 1;
+    const date = new Date();
+    date.setDate(date.getDate() + daysAhead);
+    const o = airports[Math.floor(rand() * airports.length)];
+    let d = airports[Math.floor(rand() * airports.length)];
+    while (d.code === o.code) d = airports[Math.floor(rand() * airports.length)];
+    const hDepH = Math.floor(rand() * 24);
+    const hDepM = Math.floor(rand() * 60);
+    const dur = 1 + Math.floor(rand() * 12);
+
+    upcomingFlights.push({
+      flightNumber: `${flight.airline.code}${100 + Math.floor(rand() * 9900)}`,
+      date: date.toISOString().split("T")[0],
+      origin: o.code,
+      destination: d.code,
+      status: "on-time",
+      departureTime: fmtTime(hDepH, hDepM),
+      arrivalTime: fmtTime(hDepH + dur, Math.floor(rand() * 60)),
+    });
+  }
+
+  return {
+    flight,
+    departure: {
+      gate: { terminal: depTerminal, gate: depGate, baggage: `B${Math.floor(1 + rand() * 12)}` },
+      times: {
+        scheduled: flight.departureTime,
+        actual: flight.status !== "boarding" ? fmtTime(depActualH, depActualM) : null,
+        estimated: null,
+      },
+      runway: runways[Math.floor(rand() * runways.length)],
+    },
+    arrival: {
+      gate: { terminal: arrTerminal, gate: arrGate, baggage: `B${Math.floor(1 + rand() * 20)}` },
+      times: {
+        scheduled: flight.arrivalTime,
+        actual: flight.status === "landed" ? fmtTime(arrEstH, arrEstM) : null,
+        estimated: flight.status !== "landed" ? fmtTime(arrEstH, arrEstM) : null,
+      },
+      runway: runways[Math.floor(rand() * runways.length)],
+    },
+    aircraftInfo: {
+      type: flight.aircraft,
+      registration: reg,
+      icao24,
+      age: Math.round(1 + rand() * 20),
+      seatConfig: configs[flight.aircraft] || "Y180",
+    },
+    telemetry,
+    distanceNm,
+    distanceRemaining,
+    flightTimeTotal: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+    flightTimeRemaining: `${Math.floor(remainingMinutes / 60)}h ${remainingMinutes % 60}m`,
+    filedAltitude: cruiseAlt,
+    filedSpeed: cruiseSpeed,
+    squawk,
+    flightHistory,
+    upcomingFlights,
+  };
 }

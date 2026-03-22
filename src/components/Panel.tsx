@@ -5,6 +5,7 @@ import { Flight } from "@/lib/types";
 interface PanelProps {
   flight: Flight;
   onClose: () => void;
+  onViewDetails: (flight: Flight) => void;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -26,7 +27,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function Panel({ flight, onClose }: PanelProps) {
+export default function Panel({ flight, onClose, onViewDetails }: PanelProps) {
   const progressPercent = Math.round(flight.progress * 100);
 
   return (
@@ -103,7 +104,7 @@ export default function Panel({ flight, onClose }: PanelProps) {
         </div>
 
         {/* Details grid */}
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-3">
           <div className="grid grid-cols-3 gap-1.5">
             {[
               { label: "Aircraft", value: flight.aircraft },
@@ -116,6 +117,16 @@ export default function Panel({ flight, onClose }: PanelProps) {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* View Full Details button */}
+        <div className="px-4 pb-4">
+          <button
+            onClick={() => onViewDetails(flight)}
+            className="w-full py-2 rounded-xl text-[11px] font-semibold tracking-wide transition-all duration-300 detail-view-btn"
+          >
+            View Full Details
+          </button>
         </div>
       </div>
     </div>
