@@ -10,7 +10,7 @@ import { generateFlights } from "@/lib/data";
 import { airports } from "@/lib/data";
 import { Flight } from "@/lib/types";
 
-type Tab = "map" | "flights" | "airports" | "settings";
+type Tab = "map" | "flights" | "airports" | "atc" | "alerts";
 
 export default function Home() {
   const flights = useMemo(() => generateFlights(1000), []);
@@ -24,7 +24,7 @@ export default function Home() {
   );
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: "#0a1628" }}>
+    <div className="relative w-full h-screen overflow-hidden" style={{ background: "#030610" }}>
       <MapLoader
         flights={flights}
         airports={airports}
