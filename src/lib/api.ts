@@ -3,49 +3,41 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Flight } from "./types";
 
-export function useLiveFlights(intervalMs: number = 10000) {
-  const [flights, setFlights] = useState<Flight[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<number>(0);
-  const [source, setSource] = useState<string>("");
+export function useLiveFlights(intervalMs: number = 10000, initialFlights: Flight[] = []) {
+  const [flights, setFlights] = useState<Flight[]>(initialFlights);
+  const [source, setSource] = useState<string>(initialFlights.length > 0 ? "prefetch" : "");
   const mountedRef = useRef(true);
 
   const fetchFlights = useCallback(async () => {
     try {
       const res = await fetch("/api/flights");
       const json = await res.json();
-
       if (mountedRef.current) {
-        const flightData: Flight[] = json.flights || [];
-        setFlights(flightData);
-        setLastUpdate(Date.now());
-        setLoading(false);
+        setFlights(json.flights || []);
         setSource(json.source || "unknown");
-        setError(json.error || null);
-
         if (json.source) {
-          console.log(`[SkyWay] ${flightData.length} flights loaded (source: ${json.source})`);
+          console.log(`[SkyWay] ${(json.flights || []).length} flights (${json.source})`);
         }
       }
     } catch (err) {
-      console.error("[SkyWay] Failed to fetch /api/flights:", err);
-      if (mountedRef.current) {
-        setError(String(err));
-        setLoading(false);
-      }
+      console.error("[SkyWay] Fetch failed:", err);
     }
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    fetchFlights();
+    // Don't fetch immediately if we have prefetched data — wait for first interval
+    const delay = initialFlights.length > 0 ? intervalMs : 0;
+    const timeout = setTimeout(() => {
+      fetchFlights();
+    }, delay);
     const interval = setInterval(fetchFlights, intervalMs);
     return () => {
       mountedRef.current = false;
+      clearTimeout(timeout);
       clearInterval(interval);
     };
-  }, [fetchFlights, intervalMs]);
+  }, [fetchFlights, intervalMs, initialFlights.length]);
 
-  return { flights, loading, error, lastUpdate, source };
+  return { flights, source };
 }

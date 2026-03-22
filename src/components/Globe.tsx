@@ -14,8 +14,8 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 4.0;
-const AIRCRAFT_SCALE_SELECTED = 6.5;
+const AIRCRAFT_SCALE = 5.0;
+const AIRCRAFT_SCALE_SELECTED = 8.0;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
 function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3 {
@@ -105,28 +105,103 @@ function createStars(): THREE.Points {
 }
 
 function createAircraftTexture(): THREE.Texture {
-  const size = 128;
+  const size = 256;
   const canvas = document.createElement("canvas");
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   const cx = size / 2, cy = size / 2;
-  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size / 2);
-  glowGrad.addColorStop(0, "rgba(0, 229, 255, 0.2)");
-  glowGrad.addColorStop(0.25, "rgba(0, 229, 255, 0.06)");
-  glowGrad.addColorStop(1, "rgba(0, 229, 255, 0)");
-  ctx.fillStyle = glowGrad;
+
+  // Multi-layer glow halo
+  const g1 = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.48);
+  g1.addColorStop(0, "rgba(0, 229, 255, 0.18)");
+  g1.addColorStop(0.15, "rgba(0, 229, 255, 0.08)");
+  g1.addColorStop(0.4, "rgba(0, 229, 255, 0.02)");
+  g1.addColorStop(1, "rgba(0, 229, 255, 0)");
+  ctx.fillStyle = g1;
   ctx.fillRect(0, 0, size, size);
-  ctx.save(); ctx.translate(cx, cy);
-  const s = size * 0.19;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-  ctx.shadowColor = "rgba(0, 229, 255, 0.6)"; ctx.shadowBlur = 8;
-  ctx.beginPath(); ctx.moveTo(0, -s*1.7); ctx.lineTo(s*0.18, -s*0.8); ctx.lineTo(s*0.18, s*0.2); ctx.lineTo(s*0.12, s*1.5); ctx.lineTo(-s*0.12, s*1.5); ctx.lineTo(-s*0.18, s*0.2); ctx.lineTo(-s*0.18, -s*0.8); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(s*0.15, -s*0.15); ctx.lineTo(s*1.5, s*0.5); ctx.lineTo(s*1.5, s*0.65); ctx.lineTo(s*0.18, s*0.15); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-s*0.15, -s*0.15); ctx.lineTo(-s*1.5, s*0.5); ctx.lineTo(-s*1.5, s*0.65); ctx.lineTo(-s*0.18, s*0.15); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(s*0.1, s*1.1); ctx.lineTo(s*0.55, s*1.5); ctx.lineTo(s*0.55, s*1.6); ctx.lineTo(s*0.12, s*1.35); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(-s*0.1, s*1.1); ctx.lineTo(-s*0.55, s*1.5); ctx.lineTo(-s*0.55, s*1.6); ctx.lineTo(-s*0.12, s*1.35); ctx.closePath(); ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  const s = size * 0.17;
+
+  // Draw aircraft silhouette with multiple passes for anti-aliased glow
+  const drawPlane = () => {
+    // Fuselage — smooth tapered body
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 1.8);
+    ctx.quadraticCurveTo(s * 0.22, -s * 1.2, s * 0.2, -s * 0.6);
+    ctx.lineTo(s * 0.2, s * 0.3);
+    ctx.quadraticCurveTo(s * 0.18, s * 1.2, s * 0.1, s * 1.6);
+    ctx.lineTo(-s * 0.1, s * 1.6);
+    ctx.quadraticCurveTo(-s * 0.18, s * 1.2, -s * 0.2, s * 0.3);
+    ctx.lineTo(-s * 0.2, -s * 0.6);
+    ctx.quadraticCurveTo(-s * 0.22, -s * 1.2, 0, -s * 1.8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Right wing — swept
+    ctx.beginPath();
+    ctx.moveTo(s * 0.18, -s * 0.1);
+    ctx.quadraticCurveTo(s * 0.8, s * 0.15, s * 1.55, s * 0.5);
+    ctx.lineTo(s * 1.55, s * 0.7);
+    ctx.quadraticCurveTo(s * 0.8, s * 0.35, s * 0.2, s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Left wing — swept
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.18, -s * 0.1);
+    ctx.quadraticCurveTo(-s * 0.8, s * 0.15, -s * 1.55, s * 0.5);
+    ctx.lineTo(-s * 1.55, s * 0.7);
+    ctx.quadraticCurveTo(-s * 0.8, s * 0.35, -s * 0.2, s * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Right tail
+    ctx.beginPath();
+    ctx.moveTo(s * 0.1, s * 1.15);
+    ctx.quadraticCurveTo(s * 0.35, s * 1.3, s * 0.55, s * 1.5);
+    ctx.lineTo(s * 0.55, s * 1.65);
+    ctx.quadraticCurveTo(s * 0.3, s * 1.5, s * 0.12, s * 1.4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Left tail
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.1, s * 1.15);
+    ctx.quadraticCurveTo(-s * 0.35, s * 1.3, -s * 0.55, s * 1.5);
+    ctx.lineTo(-s * 0.55, s * 1.65);
+    ctx.quadraticCurveTo(-s * 0.3, s * 1.5, -s * 0.12, s * 1.4);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  // Pass 1: outer cyan glow
+  ctx.shadowColor = "rgba(0, 229, 255, 0.5)";
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = "rgba(0, 229, 255, 0.3)";
+  drawPlane();
+
+  // Pass 2: inner glow
+  ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "rgba(180, 240, 255, 0.7)";
+  drawPlane();
+
+  // Pass 3: bright core
+  ctx.shadowColor = "rgba(255, 255, 255, 0.4)";
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  drawPlane();
+
   ctx.restore();
+
   const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }
@@ -280,7 +355,8 @@ export default function Globe({
     const airborne = flightsRef.current.filter(
       (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
-    const planeGeo = new THREE.PlaneGeometry(1, 1);
+    // BoxGeometry with tiny depth for reliable raycasting from all camera angles
+    const planeGeo = new THREE.BoxGeometry(1, 1, 0.01);
     const planeMat = new THREE.MeshBasicMaterial({
       map: aircraftTexture, transparent: true, alphaTest: 0.01,
       side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -315,24 +391,39 @@ export default function Globe({
     const usTarget = latLngTo3D(39, -98, 1).normalize().multiplyScalar(175);
     cameraAnimRef.current = { targetPos: usTarget };
 
-    // Click handling
+    // Click + hover handling with raycaster
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    const onClick = (e: MouseEvent) => {
+
+    const getRayHit = (e: MouseEvent): number | null => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObject(aircraftMesh);
       if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const idx = intersects[0].instanceId;
+        return intersects[0].instanceId;
+      }
+      return null;
+    };
+
+    const onClick = (e: MouseEvent) => {
+      const idx = getRayHit(e);
+      if (idx !== null) {
         const flight = sceneDataRef.current?.airborneFlights[idx];
         if (flight) {
           onSelectRef.current(selectedRef.current?.id === flight.id ? null : flight);
         }
       }
     };
+
+    const onMouseMove = (e: MouseEvent) => {
+      const idx = getRayHit(e);
+      renderer.domElement.style.cursor = idx !== null ? "pointer" : "";
+    };
+
     renderer.domElement.addEventListener("click", onClick);
+    renderer.domElement.addEventListener("mousemove", onMouseMove);
 
     // Animation loop
     const animate = () => {
@@ -401,6 +492,7 @@ export default function Globe({
     return () => {
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("click", onClick);
+      renderer.domElement.removeEventListener("mousemove", onMouseMove);
       cancelAnimationFrame(sceneDataRef.current?.animationId || 0);
       renderer.dispose(); scene.clear();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
