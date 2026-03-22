@@ -1,0 +1,22 @@
+name: Auto Merge Claude Code
+on:
+  push:
+    branches:
+      - 'claude/**'
+jobs:
+  merge-to-main:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge to main
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git pull origin main
+          git merge ${{ github.ref_name }} --no-edit
+          git push origin main
