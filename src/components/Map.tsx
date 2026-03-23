@@ -219,11 +219,12 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             zIndex: 500,
           });
 
-          // Inline SVG + label as slotted content (no template needed for non-interactive)
+          const tpl = document.createElement("template");
           const wrapper = document.createElement("div");
           wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;";
           wrapper.innerHTML = `${airportDotSvg(28)}<div style="color:#3bb8e8;font-size:11px;font-weight:700;font-family:-apple-system,sans-serif;text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 12px rgba(59,184,232,0.4);letter-spacing:0.6px;white-space:nowrap;">${apt.code}</div>`;
-          marker.append(wrapper);
+          tpl.content.appendChild(wrapper);
+          marker.append(tpl);
           map.append(marker);
           airportMarkersRef.current.push(marker);
         }
@@ -266,22 +267,24 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.15)" : "rgba(225,175,55,0.92)";
-        const sz = isSel ? 40 : 30;
+        // Brighter colors to compensate for container brightness filter
+        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,200,60,0.2)" : "rgba(255,200,60,1)";
+        const sz = isSel ? 42 : 32;
 
         const mkIcon = () => {
+          const tpl = document.createElement("template");
           const img = document.createElement("img");
           img.src = planeSvgUrl(color, f.heading, sz, isSel);
           img.width = sz;
           img.height = sz;
           img.style.display = "block";
-          return img;
+          tpl.content.appendChild(img);
+          return tpl;
         };
 
         const em = existing.get(f.id);
         if (em) {
           em.position = { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 };
-          // Replace content
           while (em.firstChild) em.removeChild(em.firstChild);
           em.append(mkIcon());
           em.zIndex = isSel ? 9999 : Math.round(f.altitude);
@@ -443,9 +446,11 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: acAlt + 12000 },
           altitudeMode: "ABSOLUTE", collisionBehavior: "REQUIRED", zIndex: 10000,
         });
+        const popTpl = document.createElement("template");
         const div = document.createElement("div");
         div.innerHTML = flightPopupHtml(selectedFlight);
-        popupMarker.append(div);
+        popTpl.content.appendChild(div);
+        popupMarker.append(popTpl);
         map.append(popupMarker);
         popupRef.current = popupMarker;
 
@@ -477,12 +482,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
   return (
     <>
-      {/* Dark overlay to darken satellite imagery — pointer-events:none so map stays interactive */}
-      <div className="absolute inset-0 z-[1] pointer-events-none" style={{
-        background: "radial-gradient(ellipse at center, rgba(0,5,15,0.45) 0%, rgba(0,5,15,0.65) 100%)",
-        mixBlendMode: "multiply",
-      }} />
-      <div ref={containerRef} className="absolute inset-0 z-0" />
+      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.7) saturate(0.85)" }} />
     </>
   );
 }
