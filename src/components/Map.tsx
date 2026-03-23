@@ -30,16 +30,17 @@ const MAJOR_AIRPORTS = new Set([
   "YYZ","YVR","YUL","YYC","MEX","CUN","LHR","CDG","FRA","AMS",
 ]);
 
-/* ── Plane SVG — bold white aircraft with strong outline ── */
+/* ── Plane SVG — bright white aircraft, Apple-premium feel ── */
 function planeSvg(color: string, heading: number, size = 32, glow = false): string {
+  // Compensate for map brightness filter — make everything overbright
   const glowFilter = glow
-    ? `<defs><filter id="g"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="${color}" flood-opacity="1"/></filter></defs>`
-    : `<defs><filter id="s"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="rgba(0,0,0,1)" flood-opacity="0.9"/></filter></defs>`;
+    ? `<defs><filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="${color}" flood-opacity="1"/></filter></defs>`
+    : `<defs><filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="0.3"/><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="1"/><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="${color}" flood-opacity="0.5"/></filter></defs>`;
   const filterAttr = glow ? ' filter="url(#g)"' : ' filter="url(#s)"';
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
     ${glowFilter}
     <g transform="rotate(${heading}, 32, 32)"${filterAttr}>
-      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(0,0,0,0.7)" stroke-width="1.5"/>
+      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(0,0,0,0.6)" stroke-width="1"/>
     </g>
   </svg>`;
 }
@@ -48,27 +49,33 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Airport marker SVG — large glowing dot with bold IATA code ── */
+/* ── Airport marker SVG — bright dot + bold white IATA on dark pill ── */
 function airportMarkerSvg(code: string): string {
-  const w = 120, h = 80, cx = w / 2;
+  const w = 120, h = 86, cx = w / 2;
+  const textW = code.length * 14 + 16;
+  const pillX = cx - textW / 2;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
     <defs>
       <radialGradient id="ag_${code}" cx="50%" cy="50%" r="50%">
         <stop offset="0%" stop-color="rgba(0,229,255,1)"/>
-        <stop offset="30%" stop-color="rgba(0,229,255,0.6)"/>
-        <stop offset="70%" stop-color="rgba(0,229,255,0.15)"/>
+        <stop offset="25%" stop-color="rgba(0,229,255,0.7)"/>
+        <stop offset="60%" stop-color="rgba(0,229,255,0.15)"/>
         <stop offset="100%" stop-color="rgba(0,229,255,0)"/>
       </radialGradient>
-      <filter id="af_${code}">
-        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#000" flood-opacity="0.9"/>
-        <feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#00e5ff" flood-opacity="0.5"/>
+      <filter id="af_${code}" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="1"/>
       </filter>
     </defs>
-    <circle cx="${cx}" cy="24" r="24" fill="url(#ag_${code})"/>
-    <circle cx="${cx}" cy="24" r="8" fill="rgba(0,229,255,0.35)" stroke="#00e5ff" stroke-width="2"/>
-    <circle cx="${cx}" cy="24" r="4" fill="#00e5ff"/>
-    <circle cx="${cx}" cy="24" r="2" fill="#fff"/>
-    <text x="${cx}" y="${h - 4}" text-anchor="middle" font-family="'SF Pro Display','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="20" font-weight="900" fill="#ffffff" letter-spacing="2" filter="url(#af_${code})">${code}</text>
+    <!-- Glow -->
+    <circle cx="${cx}" cy="26" r="26" fill="url(#ag_${code})"/>
+    <!-- Bright dot -->
+    <circle cx="${cx}" cy="26" r="6" fill="#00e5ff" opacity="0.9"/>
+    <circle cx="${cx}" cy="26" r="3" fill="#fff"/>
+    <!-- Dark pill behind text -->
+    <rect x="${pillX}" y="56" width="${textW}" height="24" rx="12" fill="rgba(0,0,0,0.75)"/>
+    <rect x="${pillX}" y="56" width="${textW}" height="24" rx="12" fill="none" stroke="rgba(0,229,255,0.3)" stroke-width="1"/>
+    <!-- IATA code -->
+    <text x="${cx}" y="73" text-anchor="middle" font-family="'SF Pro Display','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="800" fill="#ffffff" letter-spacing="1.5" filter="url(#af_${code})">${code}</text>
   </svg>`;
 }
 
@@ -280,7 +287,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           const img = document.createElement("img");
           img.src = airportMarkerUrl(apt.code);
           img.width = 120;
-          img.height = 80;
+          img.height = 86;
           img.style.display = "block";
           img.title = `${apt.code} — ${apt.name}, ${apt.city}`;
           tpl.content.appendChild(img);
@@ -417,7 +424,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
         const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
-        const sz = isSel ? 60 : 48;
+        const sz = isSel ? 68 : 56;
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${altStr} · ${f.speed} kts`;
 
@@ -465,7 +472,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
         const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
-        const sz = isSel ? 60 : 48;
+        const sz = isSel ? 68 : 56;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel);
@@ -657,7 +664,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.5) saturate(0.6) contrast(1.15)" }} />
+      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.6) saturate(0.55) contrast(1.1)" }} />
     </>
   );
 }
