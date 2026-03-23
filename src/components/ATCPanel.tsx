@@ -491,7 +491,7 @@ export default function ATCPanel({
         @keyframes atcRecPulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
       `}</style>
 
-      {/* Collapsed tab */}
+      {/* Collapsed tab with coverage map */}
       {!expanded && (
         <button
           onClick={() => setExpanded(true)}
@@ -501,9 +501,8 @@ export default function ATCPanel({
             top: "50%",
             transform: "translateY(-50%)",
             zIndex: 200,
-            width: 40,
-            height: 140,
-            background: "rgba(0,0,0,0.85)",
+            width: 52,
+            background: "rgba(0,0,0,0.88)",
             backdropFilter: "blur(12px)",
             border: "1px solid rgba(255,255,255,0.08)",
             borderRight: "none",
@@ -513,8 +512,8 @@ export default function ATCPanel({
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            gap: 10,
-            padding: 0,
+            gap: 6,
+            padding: "10px 4px",
           }}
         >
           <div
@@ -531,14 +530,55 @@ export default function ATCPanel({
             style={{
               writingMode: "vertical-rl",
               textOrientation: "mixed",
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 800,
-              letterSpacing: "0.15em",
-              color: "rgba(255,255,255,0.7)",
+              letterSpacing: "0.12em",
+              color: "rgba(255,255,255,0.6)",
               fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
             }}
           >
-            ATC LIVE
+            ATC
+          </span>
+
+          {/* Mini coverage map */}
+          <svg
+            width="40"
+            height="28"
+            viewBox="0 0 40 28"
+            style={{ opacity: 0.8 }}
+          >
+            {ATC_AIRPORTS.map((airport) => {
+              // Map US lat/lng range (25-48 lat, -122 to -71 lng) to SVG coords
+              const x = ((airport.lng - (-125)) / ((-68) - (-125))) * 38 + 1;
+              const y = ((48 - airport.lat) / (48 - 24)) * 26 + 1;
+              const isActive = airport.icao === activeAirport && isConnected;
+              return (
+                <circle
+                  key={airport.icao}
+                  cx={x}
+                  cy={y}
+                  r={isActive ? 2.5 : 1.5}
+                  fill={isActive ? "#22c55e" : "rgba(255,255,255,0.2)"}
+                  style={{
+                    filter: isActive ? "drop-shadow(0 0 3px rgba(34,197,94,0.8))" : "none",
+                  }}
+                />
+              );
+            })}
+          </svg>
+
+          {/* Airport count */}
+          <span
+            style={{
+              fontSize: 7,
+              fontWeight: 600,
+              color: "rgba(255,255,255,0.3)",
+              fontFamily: "'SF Mono', Menlo, monospace",
+              textAlign: "center",
+              lineHeight: 1.2,
+            }}
+          >
+            {activeAirport && isConnected ? "1" : "0"}/{ATC_AIRPORTS.length}
           </span>
         </button>
       )}
