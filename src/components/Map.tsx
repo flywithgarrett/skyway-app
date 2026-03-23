@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Flight, Airport } from "@/lib/types";
 
 interface MapProps {
@@ -10,7 +10,7 @@ interface MapProps {
   onSelectFlight: (flight: Flight | null) => void;
 }
 
-/* ---------- Plane SVG (FlightAware golden silhouette) ---------- */
+/* ---------- Plane SVG ---------- */
 function planeSvg(color: string, heading: number, size = 28): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
     <g transform="rotate(${heading}, 32, 32)">
@@ -23,7 +23,7 @@ function planeSvgUrl(color: string, heading: number, size = 28): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size))}`;
 }
 
-/* ---------- Google Maps script loader ---------- */
+/* ---------- Script loader ---------- */
 const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
 
 let scriptPromise: Promise<void> | null = null;
@@ -36,7 +36,7 @@ function loadGoogleMaps(): Promise<void> {
     s.async = true;
     s.defer = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load Google Maps script"));
+    s.onerror = () => reject(new Error("Google Maps script failed to load"));
     document.head.appendChild(s);
   });
   return scriptPromise;
@@ -56,23 +56,23 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   onSelectRef.current = onSelectFlight;
   const selectedRef = useRef(selectedFlight);
   selectedRef.current = selectedFlight;
-  const readyRef = useRef(false);
-  const initRef = useRef(false);
 
-  // Init map
+  // Use state so changes trigger re-renders and downstream effects
+  const [mapReady, setMapReady] = useState(false);
+
+  // Init map — runs once
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
+    let cancelled = false;
 
     (async () => {
       try {
         await loadGoogleMaps();
       } catch (e) {
-        console.error("Script load failed:", e);
+        console.error("Google Maps script load failed:", e);
         return;
       }
 
-      if (!containerRef.current) return;
+      if (cancelled || !containerRef.current) return;
 
       // Try 3D first
       try {
@@ -86,62 +86,66 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         });
         map3d.style.width = "100%";
         map3d.style.height = "100%";
-        containerRef.current.appendChild(map3d);
+        if (cancelled) return;
+        containerRef.current!.appendChild(map3d);
         mapRef.current = map3d;
         is3dRef.current = true;
-        readyRef.current = true;
+        setMapReady(true);
         console.log("Google Maps 3D initialized");
       } catch (err) {
-        console.warn("3D Maps not available, falling back to 2D:", err);
-        // Fallback: standard 2D Google Map
+        console.warn("3D Maps failed, trying 2D fallback:", err);
         try {
           const { Map: GMap } = await google.maps.importLibrary("maps");
+          if (cancelled || !containerRef.current) return;
           const map2d = new GMap(containerRef.current, {
             center: { lat: 30, lng: -40 },
             zoom: 3,
             mapTypeId: "hybrid",
             disableDefaultUI: true,
             zoomControl: true,
-            mapId: "skyway-dark",
           });
           mapRef.current = map2d;
           is3dRef.current = false;
-          readyRef.current = true;
+          setMapReady(true);
           console.log("Google Maps 2D fallback initialized");
         } catch (err2) {
-          console.error("Google Maps 2D also failed:", err2);
+          console.error("Both 3D and 2D failed:", err2);
         }
       }
     })();
 
     return () => {
+      cancelled = true;
       markersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       markersRef.current.clear();
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
-      if (mapRef.current && containerRef.current) {
+      if (containerRef.current) {
         try { containerRef.current.innerHTML = ""; } catch {}
       }
       mapRef.current = null;
-      readyRef.current = false;
-      initRef.current = false;
+      setMapReady(false);
     };
   }, []);
 
-  // Airports
+  // Update airports when map is ready
   useEffect(() => {
-    if (!readyRef.current || !airports.length) return;
+    if (!mapReady || !airports.length) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    const timer = setTimeout(async () => {
-      const map = mapRef.current;
-      if (!map) return;
+    let cancelled = false;
 
+    (async () => {
       // Remove old
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
 
+      if (cancelled) return;
+
       if (is3dRef.current) {
         const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+        if (cancelled) return;
         for (const apt of airports) {
           const m = new Marker3DElement({
             position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
@@ -154,6 +158,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         }
       } else {
         const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+        if (cancelled) return;
         for (const apt of airports) {
           const el = document.createElement("div");
           el.style.cssText = "color:#2cc855;font-size:10px;font-weight:700;text-shadow:0 0 4px #000;";
@@ -162,145 +167,143 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           airportMarkersRef.current.push(m);
         }
       }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [airports]);
+    })();
 
-  // Flights
+    return () => { cancelled = true; };
+  }, [mapReady, airports]);
+
+  // Update flights
+  const updateFlights = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    (window as any).__skyway_flights = flights;
+
+    const airborne = flights.filter((f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0);
+    const hasSelection = selectedRef.current !== null;
+    const currentIds = new Set(airborne.map((f) => f.id));
+    const existing = markersRef.current;
+
+    // Remove stale
+    for (const [id, m] of existing) {
+      if (!currentIds.has(id)) {
+        try { m.remove?.(); m.setMap?.(null); } catch {}
+        existing.delete(id);
+      }
+    }
+
+    if (is3dRef.current) {
+      const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
+
+      for (const f of airborne) {
+        const isSel = f.id === selectedRef.current?.id;
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.3)" : "rgba(225,175,55,0.92)";
+        const sz = isSel ? 36 : 28;
+
+        const mkIcon = () => {
+          const tpl = document.createElement("template");
+          const img = document.createElement("img");
+          img.src = planeSvgUrl(color, f.heading, sz);
+          img.width = sz;
+          img.height = sz;
+          img.style.display = "block";
+          tpl.content.appendChild(img);
+          return tpl;
+        };
+
+        const em = existing.get(f.id);
+        if (em) {
+          em.position = { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 };
+          while (em.firstChild) em.removeChild(em.firstChild);
+          em.append(mkIcon());
+          em.zIndex = isSel ? 9999 : Math.round(f.altitude);
+        } else {
+          const marker = new Marker3DInteractiveElement({
+            position: { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 },
+            altitudeMode: "ABSOLUTE",
+            collisionBehavior: "REQUIRED",
+            zIndex: isSel ? 9999 : Math.round(f.altitude),
+          });
+          marker.append(mkIcon());
+          marker.addEventListener("gmp-click", (e: any) => {
+            e.stopPropagation();
+            if (selectedRef.current?.id === f.id) {
+              onSelectRef.current(null);
+            } else {
+              const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
+              if (found) onSelectRef.current(found);
+            }
+          });
+          map.append(marker);
+          existing.set(f.id, marker);
+        }
+      }
+    } else {
+      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+
+      for (const f of airborne) {
+        const isSel = f.id === selectedRef.current?.id;
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.3)" : "rgba(225,175,55,0.92)";
+        const sz = isSel ? 36 : 28;
+
+        const mkEl = () => {
+          const div = document.createElement("div");
+          div.innerHTML = planeSvg(color, f.heading, sz);
+          div.style.cursor = "pointer";
+          return div;
+        };
+
+        const em = existing.get(f.id);
+        if (em) {
+          em.position = { lat: f.currentLat, lng: f.currentLng };
+          em.content = mkEl();
+          em.zIndex = isSel ? 9999 : Math.round(f.altitude);
+        } else {
+          const marker = new AdvancedMarkerElement({
+            map,
+            position: { lat: f.currentLat, lng: f.currentLng },
+            content: mkEl(),
+            zIndex: isSel ? 9999 : Math.round(f.altitude),
+          });
+          marker.addListener("click", () => {
+            if (selectedRef.current?.id === f.id) {
+              onSelectRef.current(null);
+            } else {
+              const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
+              if (found) onSelectRef.current(found);
+            }
+          });
+          existing.set(f.id, marker);
+        }
+      }
+    }
+  }, [flights]);
+
   useEffect(() => {
-    if (!readyRef.current) return;
-
-    const timer = setTimeout(async () => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      (window as any).__skyway_flights = flights;
-
-      const airborne = flights.filter((f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0);
-      const hasSelection = selectedRef.current !== null;
-      const currentIds = new Set(airborne.map((f) => f.id));
-      const existing = markersRef.current;
-
-      // Remove stale markers
-      for (const [id, m] of existing) {
-        if (!currentIds.has(id)) {
-          try { m.remove?.(); m.setMap?.(null); } catch {}
-          existing.delete(id);
-        }
-      }
-
-      if (is3dRef.current) {
-        const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
-
-        for (const f of airborne) {
-          const isSel = f.id === selectedRef.current?.id;
-          const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.3)" : "rgba(225,175,55,0.92)";
-          const sz = isSel ? 36 : 28;
-
-          const mkIcon = () => {
-            const tpl = document.createElement("template");
-            const img = document.createElement("img");
-            img.src = planeSvgUrl(color, f.heading, sz);
-            img.width = sz;
-            img.height = sz;
-            img.style.display = "block";
-            tpl.content.appendChild(img);
-            return tpl;
-          };
-
-          const em = existing.get(f.id);
-          if (em) {
-            em.position = { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 };
-            while (em.firstChild) em.removeChild(em.firstChild);
-            em.append(mkIcon());
-            em.zIndex = isSel ? 9999 : Math.round(f.altitude);
-          } else {
-            const marker = new Marker3DInteractiveElement({
-              position: { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 },
-              altitudeMode: "ABSOLUTE",
-              collisionBehavior: "REQUIRED",
-              zIndex: isSel ? 9999 : Math.round(f.altitude),
-            });
-            marker.append(mkIcon());
-            marker.addEventListener("gmp-click", (e: any) => {
-              e.stopPropagation();
-              if (selectedRef.current?.id === f.id) {
-                onSelectRef.current(null);
-              } else {
-                const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
-                if (found) onSelectRef.current(found);
-              }
-            });
-            map.append(marker);
-            existing.set(f.id, marker);
-          }
-        }
-      } else {
-        // 2D fallback with AdvancedMarkerElement
-        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-
-        for (const f of airborne) {
-          const isSel = f.id === selectedRef.current?.id;
-          const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.3)" : "rgba(225,175,55,0.92)";
-          const sz = isSel ? 36 : 28;
-
-          const mkEl = () => {
-            const div = document.createElement("div");
-            div.innerHTML = planeSvg(color, f.heading, sz);
-            div.style.cursor = "pointer";
-            return div;
-          };
-
-          const em = existing.get(f.id);
-          if (em) {
-            em.position = { lat: f.currentLat, lng: f.currentLng };
-            em.content = mkEl();
-            em.zIndex = isSel ? 9999 : Math.round(f.altitude);
-          } else {
-            const marker = new AdvancedMarkerElement({
-              map,
-              position: { lat: f.currentLat, lng: f.currentLng },
-              content: mkEl(),
-              zIndex: isSel ? 9999 : Math.round(f.altitude),
-            });
-            marker.addListener("click", () => {
-              if (selectedRef.current?.id === f.id) {
-                onSelectRef.current(null);
-              } else {
-                const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
-                if (found) onSelectRef.current(found);
-              }
-            });
-            existing.set(f.id, marker);
-          }
-        }
-      }
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [flights, selectedFlight]);
+    if (!mapReady) return;
+    updateFlights();
+  }, [mapReady, flights, selectedFlight, updateFlights]);
 
   // Selection: camera + route
   useEffect(() => {
-    if (!readyRef.current) return;
+    if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    const timer = setTimeout(async () => {
-      const map = mapRef.current;
-      if (!map) return;
+    // Remove old route
+    if (routeRef.current) {
+      try { routeRef.current.remove?.(); routeRef.current.setMap?.(null); } catch {}
+      routeRef.current = null;
+    }
 
-      // Remove old route
-      if (routeRef.current) {
-        try { routeRef.current.remove?.(); routeRef.current.setMap?.(null); } catch {}
-        routeRef.current = null;
-      }
+    if (!selectedFlight) return;
 
-      if (!selectedFlight) return;
+    const { origin, destination } = selectedFlight;
+    const hasOrig = origin.lat !== 0 || origin.lng !== 0;
+    const hasDest = destination.lat !== 0 || destination.lng !== 0;
 
-      const { origin, destination } = selectedFlight;
-      const hasOrig = origin.lat !== 0 || origin.lng !== 0;
-      const hasDest = destination.lat !== 0 || destination.lng !== 0;
-
+    (async () => {
       if (is3dRef.current) {
-        // 3D camera fly
         if (map.flyCameraTo) {
           map.flyCameraTo({
             endCamera: {
@@ -313,7 +316,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           });
         }
 
-        // 3D route polyline
         const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
         const coords: any[] = [];
         if (hasOrig) coords.push({ lat: origin.lat, lng: origin.lng, altitude: 1000 });
@@ -332,11 +334,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           routeRef.current = line;
         }
       } else {
-        // 2D pan
         map.panTo({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
         if (map.getZoom() < 5) map.setZoom(5);
 
-        // 2D polyline
         const path: any[] = [];
         if (hasOrig) path.push({ lat: origin.lat, lng: origin.lng });
         path.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
@@ -354,9 +354,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           routeRef.current = line;
         }
       }
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [selectedFlight]);
+    })();
+  }, [mapReady, selectedFlight]);
 
   return <div ref={containerRef} className="absolute inset-0 z-0" />;
 }
