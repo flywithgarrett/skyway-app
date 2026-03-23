@@ -14,8 +14,8 @@ interface GlobeProps {
 
 const RADIUS = 100;
 const DEG2RAD = Math.PI / 180;
-const AIRCRAFT_SCALE = 0.55;
-const AIRCRAFT_SCALE_SELECTED = 1.0;
+const AIRCRAFT_SCALE = 1.1;
+const AIRCRAFT_SCALE_SELECTED = 1.8;
 const AIRCRAFT_ALT = RADIUS * 1.012;
 
 function latLngTo3D(lat: number, lng: number, r: number = RADIUS): THREE.Vector3 {
@@ -276,33 +276,97 @@ export default function Globe({
     scene.add(createStars());
     scene.add(new THREE.AmbientLight(0x111122, 0.3));
 
-    // Globe — high-res sphere with night earth texture
+    // Globe — tile-based earth for sharp zoom at any level
     const globeGeo = new THREE.SphereGeometry(RADIUS, 200, 200);
     const globeMat = new THREE.MeshBasicMaterial({ color: 0x050a14 });
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
-    // Load high-res 8k night earth first, fall back to lower-res
-    const configTexture = (texture: THREE.Texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = true;
-      globeMat.map = texture;
-      globeMat.color = new THREE.Color(1.6, 1.6, 1.6);
-      globeMat.needsUpdate = true;
-    };
+
+    // Tile-based texture system: renders satellite tiles onto a large canvas
+    const TILE_CANVAS_W = 4096;
+    const TILE_CANVAS_H = 2048;
+    const tileCanvas = document.createElement("canvas");
+    tileCanvas.width = TILE_CANVAS_W;
+    tileCanvas.height = TILE_CANVAS_H;
+    const tileCtx = tileCanvas.getContext("2d")!;
+    tileCtx.fillStyle = "#050a14";
+    tileCtx.fillRect(0, 0, TILE_CANVAS_W, TILE_CANVAS_H);
+
+    const canvasTexture = new THREE.CanvasTexture(tileCanvas);
+    canvasTexture.colorSpace = THREE.SRGBColorSpace;
+    canvasTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    canvasTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    canvasTexture.magFilter = THREE.LinearFilter;
+    canvasTexture.generateMipmaps = true;
+    globeMat.map = canvasTexture;
+    globeMat.color = new THREE.Color(1.5, 1.5, 1.5);
+    globeMat.needsUpdate = true;
+
+    // Load base texture first (low-res fallback), then start tile loading
     loader.load(
-      "https://unpkg.com/three-globe@2.34.1/example/img/earth-night.jpg",
-      (tex) => {
-        configTexture(tex);
-        // Try loading 8k version for sharper zoom
-        loader.load(
-          "https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/dnb_land_ocean_ice.2012.3600x1800.jpg",
-          (hiRes) => configTexture(hiRes)
-        );
+      "https://unpkg.com/three-globe@2.31.1/example/img/earth-night.jpg",
+      (baseTex) => {
+        // Draw base texture onto canvas as fallback
+        const img = baseTex.image as HTMLImageElement;
+        tileCtx.drawImage(img, 0, 0, TILE_CANVAS_W, TILE_CANVAS_H);
+        canvasTexture.needsUpdate = true;
       }
     );
+
+    // Tile loading engine — loads OSM/satellite tiles and composites onto canvas
+    const tileCache = new Map<string, HTMLImageElement>();
+    const loadingTiles = new Set<string>();
+    let lastTileZoom = -1;
+
+    const loadTilesForView = (camDist: number, camLat: number, camLng: number) => {
+      // Map camera distance to tile zoom level
+      // camDist 400 (far) → zoom 1, camDist 105 (close) → zoom 5
+      const zoom = Math.floor(Math.max(1, Math.min(5, 6 - (camDist - 105) / 60)));
+      if (zoom === lastTileZoom) return;
+      lastTileZoom = zoom;
+
+      const numTiles = 1 << zoom; // 2^zoom tiles per axis
+      const tileSize = 256;
+
+      for (let tx = 0; tx < numTiles; tx++) {
+        for (let ty = 0; ty < numTiles; ty++) {
+          const key = `${zoom}/${tx}/${ty}`;
+          if (tileCache.has(key) || loadingTiles.has(key)) continue;
+          loadingTiles.add(key);
+
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          // Use CartoDB dark basemap tiles — free, no API key, CORS enabled, dark theme
+          img.src = `https://basemaps.cartocdn.com/dark_all/${zoom}/${tx}/${ty}@2x.png`;
+          img.onload = () => {
+            tileCache.set(key, img);
+            loadingTiles.delete(key);
+            // Draw tile onto canvas at correct position
+            // Mercator tile (tx,ty) → equirectangular canvas position
+            const destX = (tx / numTiles) * TILE_CANVAS_W;
+            const tileW = TILE_CANVAS_W / numTiles;
+
+            // Convert Mercator Y to latitude, then to equirectangular Y
+            const n = Math.PI - (2 * Math.PI * ty) / numTiles;
+            const latTop = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+            const n2 = Math.PI - (2 * Math.PI * (ty + 1)) / numTiles;
+            const latBot = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n2) - Math.exp(-n2)));
+
+            const destYTop = ((90 - latTop) / 180) * TILE_CANVAS_H;
+            const destYBot = ((90 - latBot) / 180) * TILE_CANVAS_H;
+            const tileH = destYBot - destYTop;
+
+            tileCtx.drawImage(img, destX, destYTop, tileW, tileH);
+            canvasTexture.needsUpdate = true;
+          };
+          img.onerror = () => { loadingTiles.delete(key); };
+        }
+      }
+    };
+
+    // Initial tile load at default zoom
+    loadTilesForView(260, 39, -98);
+
     const globe = new THREE.Mesh(globeGeo, globeMat);
     scene.add(globe);
 
@@ -458,6 +522,13 @@ export default function Globe({
       } else {
         controls.update();
       }
+
+      // Load higher-res tiles as camera zooms in
+      const camDistNow = camera.position.length();
+      const camDirVec = camera.position.clone().normalize();
+      const camLatNow = Math.asin(camDirVec.y) * (180 / Math.PI);
+      const camLngNow = Math.atan2(camDirVec.z, -camDirVec.x) * (180 / Math.PI) - 180;
+      loadTilesForView(camDistNow, camLatNow, camLngNow);
 
       // Dead reckoning + dynamic zoom scaling
       const sd = sceneDataRef.current;
