@@ -10,6 +10,8 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
+const Anthropic = require("@anthropic-ai/sdk");
+const NodeCache = require("node-cache");
 
 /* ═══════════════════════════════════════════════════════════════════════════
    1. CONFIG — Airport feeds (ICAO → Broadcastify Icecast MP3 URL)
@@ -56,11 +58,25 @@ function getOpenAI() {
   return _openai;
 }
 
+// Lazy Anthropic client
+let _anthropic = null;
+function getAnthropic() {
+  if (!_anthropic) {
+    const key = process.env.ANTHROPIC_API_KEY;
+    if (!key) throw new Error("ANTHROPIC_API_KEY not set — add it to .env");
+    _anthropic = new Anthropic({ apiKey: key });
+  }
+  return _anthropic;
+}
+
+// FlightAware / OpenSky position cache — 15s TTL
+const positionCache = new NodeCache({ stdTTL: 15, checkperiod: 20 });
+
 // Per-airport state
 const feedState = new Map(); // ICAO → { active, status, ffmpeg, backoff, transcripts[] }
 const CHUNK_DIR_BASE = "/tmp/atc";
 const CHUNK_DURATION = 5; // seconds
-const MAX_TRANSCRIPTS = 500; // ring buffer per airport
+const MAX_TRANSCRIPTS = 200; // ring buffer per airport (step 5 spec)
 const MAX_BACKOFF = 30000; // ms
 
 const WHISPER_PROMPT =
@@ -253,65 +269,271 @@ async function processChunk(icao, filepath) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   6. TRANSCRIPT PROCESSOR — extract callsign, store, broadcast
+   6. TRANSCRIPT PROCESSOR — full 5-step pipeline
    ═══════════════════════════════════════════════════════════════════════════ */
 
-// Regex to extract common callsign patterns from ATC text
-const CALLSIGN_RE =
-  /\b([A-Z]{3}\d{1,4}[A-Z]?|N\d{1,5}[A-Z]{0,2}|[A-Z]+-[A-Z]+)\b/;
+// ── STEP 1: Comprehensive callsign extraction regex ──
+const CALLSIGN_PATTERNS = [
+  // Airline ICAO callsigns: 3 uppercase letters + 1-4 digits + optional suffix
+  /\b([A-Z]{3}\d{1,4}[A-Z]?)\b/g,
+  // N-numbers (GA / US registry): N + 1-5 alphanumeric
+  /\b(N\d{1,5}[A-Z]{0,2})\b/g,
+  // Military callsigns: keyword + digits
+  /\b((?:REACH|EVAC|KNIFE|HOOK|DUKE|TOPCAT|CODY|IRON|STEEL|BLADE|RAZOR|VIPER|TANGO|BOXER)\s?\d{1,4})\b/gi,
+];
 
-function processTranscript(icao, text, timestamp) {
+function extractCallsigns(text) {
+  const upper = text.toUpperCase();
+  const found = new Set();
+  for (const re of CALLSIGN_PATTERNS) {
+    re.lastIndex = 0; // reset global regex
+    let m;
+    while ((m = re.exec(upper)) !== null) {
+      // Normalise: strip interior spaces for military (REACH 42 → REACH42)
+      found.add(m[1].replace(/\s+/g, ""));
+    }
+  }
+  return [...found];
+}
+
+// ── STEP 2: FlightAware AeroAPI v4 position lookup (with cache) ──
+async function queryFlightAware(callsign) {
+  const cacheKey = `fa:${callsign}`;
+  const cached = positionCache.get(cacheKey);
+  if (cached !== undefined) return cached; // null means "checked, no result"
+
+  const apiKey = process.env.FLIGHTAWARE_API_KEY;
+  if (!apiKey) {
+    positionCache.set(cacheKey, null);
+    return null;
+  }
+
+  try {
+    const url = `https://aeroapi.flightaware.com/aeroapi/flights/${encodeURIComponent(callsign)}`;
+    const resp = await fetch(url, {
+      headers: { "x-apikey": apiKey },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!resp.ok) {
+      console.warn(`[FA] ${callsign} → HTTP ${resp.status}`);
+      positionCache.set(cacheKey, null);
+      return null;
+    }
+
+    const data = await resp.json();
+    const flights = data.flights || [];
+
+    // Find the first flight with a last_position
+    for (const fl of flights) {
+      const pos = fl.last_position;
+      if (pos && pos.latitude != null && pos.longitude != null) {
+        const result = {
+          ident: fl.ident,
+          fa_flight_id: fl.fa_flight_id,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          altitude: pos.altitude ?? null,     // hundreds of feet
+          groundspeed: pos.groundspeed ?? null,
+          heading: pos.heading ?? null,
+        };
+        positionCache.set(cacheKey, result);
+        console.log(`[FA] ${callsign} → ${pos.latitude.toFixed(2)},${pos.longitude.toFixed(2)} FL${pos.altitude ?? "?"}`);
+        return result;
+      }
+    }
+
+    positionCache.set(cacheKey, null);
+    return null;
+  } catch (err) {
+    console.error(`[FA] ${callsign} error:`, err.message);
+    positionCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// ── STEP 2b: OpenSky Network fallback ──
+async function queryOpenSky(callsign) {
+  const cacheKey = `os:${callsign}`;
+  const cached = positionCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  try {
+    // OpenSky accepts callsign as a query filter (padded to 8 chars internally)
+    const cs = callsign.toUpperCase().trim();
+    const url = `https://opensky-network.org/api/states/all?callsign=${encodeURIComponent(cs)}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+    if (!resp.ok) {
+      console.warn(`[OpenSky] ${callsign} → HTTP ${resp.status}`);
+      positionCache.set(cacheKey, null);
+      return null;
+    }
+
+    const data = await resp.json();
+    const states = data.states || [];
+
+    if (states.length > 0) {
+      // OpenSky state vector indices:
+      // 0=icao24, 1=callsign, 2=origin_country, 3=time_position,
+      // 4=last_contact, 5=longitude, 6=latitude, 7=baro_altitude,
+      // 8=on_ground, 9=velocity, 10=true_track
+      const s = states[0];
+      const result = {
+        ident: (s[1] || callsign).trim(),
+        fa_flight_id: `opensky_${s[0]}`,
+        latitude: s[6],
+        longitude: s[5],
+        altitude: s[7] != null ? Math.round(s[7] * 3.28084 / 100) : null, // m → FL
+        groundspeed: s[9] != null ? Math.round(s[9] * 1.94384) : null,    // m/s → kts
+        heading: s[10] != null ? Math.round(s[10]) : null,
+      };
+      positionCache.set(cacheKey, result);
+      console.log(`[OpenSky] ${callsign} → ${result.latitude?.toFixed(2)},${result.longitude?.toFixed(2)}`);
+      return result;
+    }
+
+    positionCache.set(cacheKey, null);
+    return null;
+  } catch (err) {
+    console.error(`[OpenSky] ${callsign} error:`, err.message);
+    positionCache.set(cacheKey, null);
+    return null;
+  }
+}
+
+// ── Combined position lookup: FlightAware → OpenSky fallback ──
+async function getFlightPosition(callsign) {
+  const faResult = await queryFlightAware(callsign);
+  if (faResult) return faResult;
+  return queryOpenSky(callsign);
+}
+
+// ── STEP 4: Emergency detection via Claude Haiku ──
+const EMERGENCY_SYSTEM_PROMPT =
+  "You monitor ATC radio transcripts for aviation safety events. " +
+  "If the text contains ANY of these: mayday, pan-pan, emergency declared, " +
+  "engine failure, engine fire, fuel emergency, gear unsafe, runway incursion, " +
+  "collision alert, TCAS, wind shear, hijack, medical emergency, lost comms — " +
+  'respond ONLY with valid JSON: {"emergency":true,"type":"string","severity":"high|medium|low"} ' +
+  'Otherwise respond ONLY with: {"emergency":false}';
+
+async function detectEmergency(text) {
+  try {
+    const client = getAnthropic();
+    const msg = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 100,
+      system: EMERGENCY_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: text }],
+    });
+
+    const raw = (msg.content[0]?.text || "").trim();
+    const parsed = JSON.parse(raw);
+    return parsed;
+  } catch (err) {
+    console.error("[EmergencyDetect] Error:", err.message);
+    return { emergency: false };
+  }
+}
+
+// ── MAIN processTranscript — orchestrates all 5 steps ──
+async function processTranscript(icao, text, timestamp) {
   const state = feedState.get(icao);
   if (!state) return;
 
-  // Try to extract a callsign from the transcript
-  const csMatch = text.toUpperCase().match(CALLSIGN_RE);
-  const callsign = csMatch ? csMatch[1] : null;
+  try {
+    // ── STEP 1: Extract callsigns ──
+    const callsigns = extractCallsigns(text);
+    const primaryCallsign = callsigns[0] || null;
 
-  const entry = {
-    type: "transcript",
-    icao,
-    text,
-    timestamp,
-    callsign,
-    lat: AIRPORT_META[icao]?.lat ?? null,
-    lng: AIRPORT_META[icao]?.lng ?? null,
-    flightId: callsign, // can be enriched later with flight matching
-  };
+    console.log(`[${icao}] Callsigns: [${callsigns.join(", ") || "none"}]`);
 
-  // Store in ring buffer
-  state.transcripts.push(entry);
-  if (state.transcripts.length > MAX_TRANSCRIPTS) {
-    state.transcripts.shift();
-  }
+    // ── STEP 2 & 3: Lookup positions and emit per-callsign transcripts ──
+    // Fire all lookups in parallel
+    const positionResults = await Promise.all(
+      callsigns.map(async (cs) => {
+        try {
+          const pos = await getFlightPosition(cs);
+          return { callsign: cs, position: pos };
+        } catch (err) {
+          console.error(`[${icao}] Position lookup failed for ${cs}:`, err.message);
+          return { callsign: cs, position: null };
+        }
+      })
+    );
 
-  // Broadcast to subscribed WebSocket clients
-  broadcastToSubscribers(icao, entry);
-
-  // Check for alert-worthy phrases
-  checkAlerts(icao, text, timestamp);
-}
-
-function checkAlerts(icao, text, timestamp) {
-  const upper = text.toUpperCase();
-
-  const alertPatterns = [
-    { pattern: /MAYDAY/i, severity: "critical", alertType: "mayday" },
-    { pattern: /PAN PAN/i, severity: "high", alertType: "pan_pan" },
-    { pattern: /EMERGENCY/i, severity: "high", alertType: "emergency" },
-    { pattern: /GO.?AROUND/i, severity: "medium", alertType: "go_around" },
-    { pattern: /MISSED APPROACH/i, severity: "medium", alertType: "missed_approach" },
-    { pattern: /TRAFFIC ALERT/i, severity: "high", alertType: "traffic_alert" },
-    { pattern: /WIND ?SHEAR/i, severity: "high", alertType: "windshear" },
-    { pattern: /HOLD(?:ING)? SHORT/i, severity: "low", alertType: "hold_short" },
-  ];
-
-  for (const { pattern, severity, alertType } of alertPatterns) {
-    if (pattern.test(upper)) {
-      const alert = { type: "alert", icao, severity, alertType, text, timestamp };
-      broadcastToSubscribers(icao, alert);
-      console.log(`[${icao}] ⚠ ALERT ${alertType}: "${text}"`);
+    // Emit a transcript event for each callsign that has a position
+    let emitted = false;
+    for (const { callsign, position } of positionResults) {
+      if (position) {
+        const entry = {
+          type: "transcript",
+          icao,
+          text,
+          timestamp,
+          callsign,
+          lat: position.latitude,
+          lng: position.longitude,
+          altitude: position.altitude,
+          groundspeed: position.groundspeed,
+          heading: position.heading,
+          flightId: position.fa_flight_id,
+        };
+        state.transcripts.push(entry);
+        if (state.transcripts.length > MAX_TRANSCRIPTS) state.transcripts.shift();
+        broadcastToSubscribers(icao, entry);
+        emitted = true;
+      }
     }
+
+    // If no callsign had a position (or no callsigns found), still emit
+    // a basic transcript so clients always get the text
+    if (!emitted) {
+      const entry = {
+        type: "transcript",
+        icao,
+        text,
+        timestamp,
+        callsign: primaryCallsign,
+        lat: AIRPORT_META[icao]?.lat ?? null,
+        lng: AIRPORT_META[icao]?.lng ?? null,
+        altitude: null,
+        groundspeed: null,
+        heading: null,
+        flightId: null,
+      };
+      state.transcripts.push(entry);
+      if (state.transcripts.length > MAX_TRANSCRIPTS) state.transcripts.shift();
+      broadcastToSubscribers(icao, entry);
+    }
+
+    // ── STEP 4: Emergency detection via Claude ──
+    // Run in background — don't block the pipeline
+    detectEmergency(text).then((result) => {
+      try {
+        if (result.emergency) {
+          const alert = {
+            type: "alert",
+            icao,
+            severity: result.severity || "high",
+            alertType: result.type || "unknown",
+            text,
+            timestamp,
+          };
+          // Emergencies broadcast to ALL subscribers, not just this airport
+          broadcastToAll(alert);
+          console.log(`[${icao}] 🚨 EMERGENCY ${result.type} (${result.severity}): "${text}"`);
+        }
+      } catch (err) {
+        console.error("[EmergencyBroadcast]", err.message);
+      }
+    });
+
+    // (STEP 5 is handled above — transcripts stored in state.transcripts ring buffer)
+
+  } catch (err) {
+    console.error(`[${icao}] processTranscript error:`, err.message);
   }
 }
 
@@ -372,6 +594,16 @@ function broadcastToSubscribers(icao, data) {
   const payload = JSON.stringify(data);
   for (const [ws, subs] of clientSubs) {
     if (subs.has(icao) && ws.readyState === 1 /* OPEN */) {
+      try { ws.send(payload); } catch {}
+    }
+  }
+}
+
+// Emergency alerts go to ALL connected clients regardless of subscription
+function broadcastToAll(data) {
+  const payload = JSON.stringify(data);
+  for (const [ws] of clientSubs) {
+    if (ws.readyState === 1 /* OPEN */) {
       try { ws.send(payload); } catch {}
     }
   }
