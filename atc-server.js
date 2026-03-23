@@ -79,6 +79,54 @@ const WHISPER_PROMPT =
   "runway assignments, headings, altitudes. Examples: UAL432, N234AB, " +
   "runway two-two right, descend and maintain flight level two-four-zero.";
 
+/* ── Rate limiting / cost tracking ── */
+const HOURLY_COST_LIMIT = 8.0; // USD — pause transcription above this
+const WHISPER_COST_PER_MINUTE = 0.006; // $0.006 per minute of audio
+const CHUNK_MINUTES = CHUNK_DURATION / 60;
+const COST_PER_CHUNK = WHISPER_COST_PER_MINUTE * CHUNK_MINUTES;
+
+let rateLimitState = {
+  chunksProcessed: 0,       // total lifetime
+  apiCallsThisHour: 0,      // resets each hour
+  hourStartedAt: Date.now(),
+  paused: false,
+};
+
+function resetHourlyCounterIfNeeded() {
+  const elapsed = Date.now() - rateLimitState.hourStartedAt;
+  if (elapsed >= 3600000) {
+    rateLimitState.apiCallsThisHour = 0;
+    rateLimitState.hourStartedAt = Date.now();
+    if (rateLimitState.paused) {
+      rateLimitState.paused = false;
+      console.log("[RateLimit] New hour — transcription resumed");
+    }
+  }
+}
+
+function getEstimatedCostThisHour() {
+  resetHourlyCounterIfNeeded();
+  return parseFloat((rateLimitState.apiCallsThisHour * COST_PER_CHUNK).toFixed(4));
+}
+
+function recordWhisperCall() {
+  resetHourlyCounterIfNeeded();
+  rateLimitState.chunksProcessed++;
+  rateLimitState.apiCallsThisHour++;
+
+  const cost = getEstimatedCostThisHour();
+  if (cost >= HOURLY_COST_LIMIT && !rateLimitState.paused) {
+    rateLimitState.paused = true;
+    console.warn(`[RateLimit] Hourly cost $${cost.toFixed(2)} exceeds $${HOURLY_COST_LIMIT} — transcription PAUSED`);
+    broadcastToAll({ type: "rateLimit", message: "Transcription paused — hourly cost limit reached" });
+  }
+}
+
+function isRateLimited() {
+  resetHourlyCounterIfNeeded();
+  return rateLimitState.paused;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    3. FFMPEG CHUNKER — slice Icecast stream into 5s WAV files
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -244,6 +292,11 @@ function startChunkWatcher(icao, chunkDir) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 async function processChunk(icao, filepath) {
+  if (isRateLimited()) {
+    console.log(`[${icao}] Skipping chunk — rate limited`);
+    return;
+  }
+
   const timestamp = Date.now();
 
   console.log(`[${icao}] Transcribing ${path.basename(filepath)}`);
@@ -255,6 +308,8 @@ async function processChunk(icao, filepath) {
     language: "en",
     response_format: "text",
   });
+
+  recordWhisperCall();
 
   const text = (transcription || "").toString().trim();
   if (!text || text.length < 3) return; // skip empty/noise
@@ -713,6 +768,22 @@ app.get("/transcript/:icao", (req, res) => {
   }
 });
 
+// GET /stats — rate limiting and cost info
+app.get("/stats", (_req, res) => {
+  resetHourlyCounterIfNeeded();
+  res.json({
+    chunksProcessed: rateLimitState.chunksProcessed,
+    apiCallsThisHour: rateLimitState.apiCallsThisHour,
+    estimatedCostThisHour: getEstimatedCostThisHour(),
+    activeFeeds: [...feedState.entries()]
+      .filter(([, s]) => s.active)
+      .map(([icao]) => icao),
+    connectedClients: wss.clients.size,
+    paused: rateLimitState.paused,
+    hourlyCostLimit: HOURLY_COST_LIMIT,
+  });
+});
+
 // Health check
 app.get("/health", (_req, res) => {
   res.json({
@@ -753,6 +824,7 @@ Endpoints:
   POST /subscribe          — start ingesting { icao }
   POST /unsubscribe        — stop ingesting { icao }
   GET  /transcript/:icao   — recent transcripts
+  GET  /stats              — rate limit + cost tracking
   GET  /health             — server health
   WS   ws://localhost:${PORT} — real-time transcripts
 
