@@ -219,29 +219,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const { Marker3DElement } = await google.maps.importLibrary("maps3d");
         if (cancelled) return;
         for (const apt of majors) {
-          try {
-            const marker = new Marker3DElement({
-              position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
-              altitudeMode: "CLAMP_TO_GROUND",
-              collisionBehavior: "REQUIRED",
-              zIndex: 5000,
-              label: apt.code,
-            });
-
-            // Content must be <img> or <svg> inside <template> for 3D markers
-            const tpl = document.createElement("template");
-            const img = document.createElement("img");
-            img.src = airportMarkerUrl(apt.code);
-            img.width = 80;
-            img.height = 52;
-            img.style.display = "block";
-            tpl.content.appendChild(img);
-            marker.append(tpl);
-            map.append(marker);
-            airportMarkersRef.current.push(marker);
-          } catch (e) {
-            console.error(`Failed to add airport ${apt.code}:`, e);
-          }
+          // Use only built-in label — no custom template content
+          const marker = new Marker3DElement({
+            position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
+            collisionBehavior: "REQUIRED",
+            zIndex: 5000,
+            label: apt.code,
+          });
+          map.append(marker);
+          airportMarkersRef.current.push(marker);
         }
       } else {
         const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
@@ -416,6 +403,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
         const { Polyline3DElement, Marker3DElement } = await google.maps.importLibrary("maps3d");
         const acAlt = selectedFlight.altitude * 0.3048;
+        console.log(`[SkyWay] Drawing route: orig=${hasOrig}(${origin.code}), dest=${hasDest}(${destination.code}), alt=${acAlt}m`);
 
         // Traveled path: origin → aircraft
         if (hasOrig) {
