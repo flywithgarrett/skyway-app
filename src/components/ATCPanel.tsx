@@ -43,7 +43,11 @@ function playAlertBeep() {
 /* ── Timestamp formatter ── */
 function fmtTime(ts: number): string {
   const d = new Date(ts);
-  return d.toISOString().slice(11, 19);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
 /* ── Alert Banner (renders at top of entire screen) ── */
@@ -60,6 +64,8 @@ export function ATCAlertBanner({
     return () => clearTimeout(t);
   }, [onDismiss]);
 
+  const isHigh = alert.severity === "high" || alert.severity === "critical";
+
   return (
     <div
       style={{
@@ -68,87 +74,34 @@ export function ATCAlertBanner({
         left: 0,
         right: 0,
         zIndex: 99999,
-        background:
-          alert.severity === "high" || alert.severity === "critical"
-            ? "linear-gradient(135deg, rgba(220,38,38,0.95), rgba(180,30,30,0.95))"
-            : "linear-gradient(135deg, rgba(217,119,6,0.92), rgba(180,90,0,0.92))",
+        background: isHigh
+          ? "linear-gradient(135deg, rgba(220,38,38,0.95), rgba(180,30,30,0.95))"
+          : "linear-gradient(135deg, rgba(217,119,6,0.92), rgba(180,90,0,0.92))",
         backdropFilter: "blur(16px)",
         padding: "14px 20px",
         display: "flex",
         alignItems: "center",
         gap: 14,
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-        boxShadow: "0 4px 32px rgba(0,0,0,0.5), 0 0 60px rgba(220,38,38,0.2)",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif",
+        boxShadow: "0 4px 32px rgba(0,0,0,0.5)",
         animation: "atcBannerSlideIn 0.3s ease-out",
       }}
     >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          background: "#fff",
-          animation: "atcPulseDot 0.6s ease-in-out infinite alternate",
-          flexShrink: 0,
-        }}
-      />
+      <div style={{ width: 8, height: 8, borderRadius: 4, background: "#fff", animation: "atcPulseDot 0.6s ease-in-out infinite alternate", flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 800,
-              color: "#fff",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-            }}
-          >
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.05em" }}>
             {alert.icao} — {alert.alertType.replace(/_/g, " ")}
           </span>
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              color: "rgba(255,255,255,0.6)",
-              background: "rgba(0,0,0,0.25)",
-              padding: "2px 6px",
-              borderRadius: 4,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
+          <span style={{ fontSize: 9, fontWeight: 600, color: "rgba(255,255,255,0.7)", background: "rgba(0,0,0,0.2)", padding: "2px 6px", borderRadius: 4 }}>
             {alert.severity}
           </span>
         </div>
-        <div
-          style={{
-            fontSize: 13,
-            color: "rgba(255,255,255,0.9)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.9)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {alert.text}
         </div>
       </div>
-      <button
-        onClick={onDismiss}
-        style={{
-          background: "rgba(0,0,0,0.2)",
-          border: "none",
-          color: "rgba(255,255,255,0.7)",
-          cursor: "pointer",
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 16,
-          flexShrink: 0,
-        }}
-      >
+      <button onClick={onDismiss} style={{ background: "rgba(0,0,0,0.2)", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", width: 28, height: 28, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
         ×
       </button>
     </div>
@@ -200,16 +153,16 @@ function destroyAudioEngine(engine: AudioEngine | null) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Waveform Visualizer — draws mirrored vertical bars on a canvas
+   Waveform Visualizer — smooth rounded bars
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const VIS_W = 280;
-const VIS_H = 40;
-const BAR_W = 8;
-const BAR_GAP = 4;
+const VIS_H = 48;
+const BAR_W = 3;
+const BAR_GAP = 2;
 const BAR_COUNT = Math.floor((VIS_W + BAR_GAP) / (BAR_W + BAR_GAP));
-const MIN_BAR_H = 2;
-const REC_THRESHOLD = 15; // amplitude avg above this → someone is transmitting
+const MIN_BAR_H = 1;
+const REC_THRESHOLD = 15;
 
 function useWaveformRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
@@ -222,17 +175,18 @@ function useWaveformRenderer(
 
   useEffect(() => {
     if (!active || !analyser || !canvasRef.current) {
-      // Draw flatline when inactive
       const c = canvasRef.current;
       if (c) {
         const ctx = c.getContext("2d");
         if (ctx) {
           ctx.clearRect(0, 0, VIS_W, VIS_H);
           const cy = VIS_H / 2;
-          ctx.fillStyle = "rgba(0,212,255,0.25)";
           for (let i = 0; i < BAR_COUNT; i++) {
             const x = i * (BAR_W + BAR_GAP);
-            ctx.fillRect(x, cy - MIN_BAR_H, BAR_W, MIN_BAR_H * 2);
+            ctx.fillStyle = "rgba(255,255,255,0.06)";
+            ctx.beginPath();
+            ctx.roundRect(x, cy - MIN_BAR_H, BAR_W, MIN_BAR_H * 2, 1);
+            ctx.fill();
           }
         }
       }
@@ -249,7 +203,6 @@ function useWaveformRenderer(
 
       analyser.getByteFrequencyData(dataArray);
 
-      // Compute average amplitude for REC indicator (rolling 100ms ~ 6 frames at 60fps)
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
       const avg = sum / dataArray.length;
@@ -259,27 +212,22 @@ function useWaveformRenderer(
       const rollingAvg = rolling.reduce((a, b) => a + b, 0) / rolling.length;
       onRecChange(rollingAvg > REC_THRESHOLD);
 
-      // Clear canvas
       ctx.clearRect(0, 0, VIS_W, VIS_H);
-
       const cy = VIS_H / 2;
       const binStep = Math.floor(dataArray.length / BAR_COUNT);
 
       for (let i = 0; i < BAR_COUNT; i++) {
-        // Sample from frequency bins, bias toward lower frequencies (voice range)
         const binIdx = Math.min(i * binStep, dataArray.length - 1);
         const val = dataArray[binIdx] / 255;
         const barH = Math.max(MIN_BAR_H, val * (VIS_H / 2 - 2));
-
         const x = i * (BAR_W + BAR_GAP);
 
-        // Gradient-like effect: brighter at center
-        const brightness = 0.4 + val * 0.6;
-        ctx.fillStyle = `rgba(0,212,255,${brightness})`;
+        const alpha = 0.15 + val * 0.85;
+        ctx.fillStyle = `rgba(52, 211, 153, ${alpha})`;
 
-        // Mirror vertically from center
-        ctx.fillRect(x, cy - barH, BAR_W, barH); // top half
-        ctx.fillRect(x, cy, BAR_W, barH);         // bottom half
+        ctx.beginPath();
+        ctx.roundRect(x, cy - barH, BAR_W, barH * 2, BAR_W / 2);
+        ctx.fill();
       }
 
       rafRef.current = requestAnimationFrame(draw);
@@ -294,7 +242,7 @@ function useWaveformRenderer(
   }, [active, analyser, canvasRef, onRecChange]);
 }
 
-/* ── Highlight search matches in transcript text ── */
+/* ── Highlight search matches ── */
 function highlightMatches(text: string, query: string): React.ReactNode {
   if (!query) return text;
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -302,7 +250,7 @@ function highlightMatches(text: string, query: string): React.ReactNode {
   const parts = text.split(regex);
   return parts.map((part, i) =>
     regex.test(part) ? (
-      <mark key={i} style={{ background: "rgba(250,204,21,0.4)", color: "#fbbf24", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
+      <mark key={i} style={{ background: "rgba(52,211,153,0.3)", color: "#34d399", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
     ) : (
       part
     )
@@ -310,7 +258,7 @@ function highlightMatches(text: string, query: string): React.ReactNode {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Main ATC Panel
+   Main ATC Panel — Apple-style design
    ═══════════════════════════════════════════════════════════════════════════ */
 
 interface ATCPanelProps {
@@ -337,62 +285,37 @@ export default function ATCPanel({
   const [volume, setVolume] = useState(70);
   const [isRec, setIsRec] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
-  const [showHint, setShowHint] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevTranscriptCountRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Audio engine ref
   const engineRef = useRef<AudioEngine | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Stabilize the onRecChange callback
   const handleRecChange = useCallback((rec: boolean) => setIsRec(rec), []);
 
-  // ── Keyboard shortcuts ──
+  const connected = isConnected || isDemo;
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't intercept when typing in an input/textarea/select
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-
-      if (e.key === "t" || e.key === "T") {
-        setExpanded((prev) => !prev);
-      } else if (e.key === "m" || e.key === "M") {
-        setAudioOn((prev) => !prev);
-      } else if (e.key === "Escape") {
-        setExpanded(false);
-      }
+      if (e.key === "t" || e.key === "T") setExpanded((prev) => !prev);
+      else if (e.key === "m" || e.key === "M") setAudioOn((prev) => !prev);
+      else if (e.key === "Escape") setExpanded(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ── First-load hint toast ──
-  useEffect(() => {
-    const hintKey = "skyway-atc-hint-shown";
-    if (typeof window !== "undefined" && !sessionStorage.getItem(hintKey)) {
-      sessionStorage.setItem(hintKey, "1");
-      setShowHint(true);
-      const timer = setTimeout(() => setShowHint(false), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  useWaveformRenderer(canvasRef, engineRef.current?.analyser ?? null, audioOn && !!activeAirport, handleRecChange);
 
-  // Waveform renderer
-  useWaveformRenderer(
-    canvasRef,
-    engineRef.current?.analyser ?? null,
-    audioOn && !!activeAirport,
-    handleRecChange,
-  );
-
-  // ── Core audio lifecycle ──
+  // Audio lifecycle
   const startAudio = useCallback((icao: string) => {
-    // Destroy previous
     destroyAudioEngine(engineRef.current);
     engineRef.current = null;
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
@@ -406,10 +329,9 @@ export default function ATCPanel({
       const engine = createAudioEngine(url, volume);
       engineRef.current = engine;
 
-      // 5-second load timeout
       loadTimerRef.current = setTimeout(() => {
         if (engine.audio.readyState < 2) {
-          setFeedError("Feed offline");
+          setFeedError("Connecting...");
           scheduleRetry(icao);
         }
       }, 5000);
@@ -421,14 +343,14 @@ export default function ATCPanel({
 
       engine.audio.addEventListener("error", () => {
         if (loadTimerRef.current) { clearTimeout(loadTimerRef.current); loadTimerRef.current = null; }
-        setFeedError("Feed offline");
+        setFeedError("Reconnecting...");
         scheduleRetry(icao);
       }, { once: true });
 
       engine.audio.play().catch(() => {
-        setFeedError("Autoplay blocked");
+        setFeedError("Tap to enable audio");
       });
-    } catch (err) {
+    } catch {
       setFeedError("Audio init failed");
       scheduleRetry(icao);
     }
@@ -437,7 +359,7 @@ export default function ATCPanel({
   const scheduleRetry = useCallback((icao: string) => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     retryTimerRef.current = setTimeout(() => {
-      if (engineRef.current) return; // already replaced
+      if (engineRef.current) return;
       startAudio(icao);
     }, 30000);
   }, [startAudio]);
@@ -451,29 +373,20 @@ export default function ATCPanel({
     setIsRec(false);
   }, []);
 
-  // Toggle audio on/off
   useEffect(() => {
-    if (audioOn && activeAirport) {
-      startAudio(activeAirport);
-    } else {
-      stopAudio();
-    }
+    if (audioOn && activeAirport) startAudio(activeAirport);
+    else stopAudio();
     return () => stopAudio();
   }, [audioOn, activeAirport, startAudio, stopAudio]);
 
-  // Volume changes
   useEffect(() => {
-    if (engineRef.current) {
-      engineRef.current.gainNode.gain.value = volume / 100;
-    }
+    if (engineRef.current) engineRef.current.gainNode.gain.value = volume / 100;
   }, [volume]);
 
-  // Auto-scroll logic
+  // Auto-scroll
   useEffect(() => {
     if (!scrollRef.current || userScrolledRef.current) return;
-    if (transcripts.length > prevTranscriptCountRef.current) {
-      scrollRef.current.scrollTop = 0;
-    }
+    if (transcripts.length > prevTranscriptCountRef.current) scrollRef.current.scrollTop = 0;
     prevTranscriptCountRef.current = transcripts.length;
   }, [transcripts.length]);
 
@@ -482,18 +395,19 @@ export default function ATCPanel({
     userScrolledRef.current = scrollRef.current.scrollTop > 40;
   }, []);
 
+  const selectedAirport = ATC_AIRPORTS.find((a) => a.icao === activeAirport);
+
   return (
     <>
-      {/* Injected keyframe styles */}
       <style>{`
-        @keyframes atcSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
-        @keyframes atcFadeInLine { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes atcSlideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes atcFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes atcPulseDot { from { opacity: 1; } to { opacity: 0.3; } }
         @keyframes atcBannerSlideIn { from { transform: translateY(-100%); } to { transform: translateY(0); } }
-        @keyframes atcRecPulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        @keyframes atcLivePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
       `}</style>
 
-      {/* Collapsed tab with coverage map */}
+      {/* ── Collapsed Tab ── */}
       {!expanded && (
         <button
           onClick={() => setExpanded(true)}
@@ -503,89 +417,39 @@ export default function ATCPanel({
             top: "50%",
             transform: "translateY(-50%)",
             zIndex: 200,
-            width: 52,
-            background: "rgba(0,0,0,0.88)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255,255,255,0.08)",
+            width: 44,
+            background: "rgba(10,10,10,0.85)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(255,255,255,0.06)",
             borderRight: "none",
-            borderRadius: "10px 0 0 10px",
+            borderRadius: "12px 0 0 12px",
             cursor: "pointer",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            gap: 6,
-            padding: "10px 4px",
+            gap: 8,
+            padding: "14px 6px",
           }}
         >
           <div
             style={{
-              width: 7,
-              height: 7,
-              borderRadius: 4,
-              background: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280",
-              boxShadow: isDemo ? "0 0 8px rgba(245,158,11,0.6)" : isConnected ? "0 0 8px rgba(34,197,94,0.6)" : "none",
-              animation: (isConnected || isDemo) ? "atcPulseDot 1.2s ease-in-out infinite alternate" : "none",
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              background: connected ? "#34d399" : "rgba(255,255,255,0.2)",
+              boxShadow: connected ? "0 0 8px rgba(52,211,153,0.5)" : "none",
+              animation: connected ? "atcLivePulse 2s ease-in-out infinite" : "none",
             }}
           />
-          <span
-            style={{
-              writingMode: "vertical-rl",
-              textOrientation: "mixed",
-              fontSize: 9,
-              fontWeight: 800,
-              letterSpacing: "0.12em",
-              color: "rgba(255,255,255,0.6)",
-              fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
-            }}
-          >
+          <span style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "rgba(255,255,255,0.5)", fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif" }}>
             ATC
-          </span>
-
-          {/* Mini coverage map */}
-          <svg
-            width="40"
-            height="28"
-            viewBox="0 0 40 28"
-            style={{ opacity: 0.8 }}
-          >
-            {ATC_AIRPORTS.map((airport) => {
-              // Map US lat/lng range (25-48 lat, -122 to -71 lng) to SVG coords
-              const x = ((airport.lng - (-125)) / ((-68) - (-125))) * 38 + 1;
-              const y = ((48 - airport.lat) / (48 - 24)) * 26 + 1;
-              const isActive = airport.icao === activeAirport && isConnected;
-              return (
-                <circle
-                  key={airport.icao}
-                  cx={x}
-                  cy={y}
-                  r={isActive ? 2.5 : 1.5}
-                  fill={isActive ? "#22c55e" : "rgba(255,255,255,0.2)"}
-                  style={{
-                    filter: isActive ? "drop-shadow(0 0 3px rgba(34,197,94,0.8))" : "none",
-                  }}
-                />
-              );
-            })}
-          </svg>
-
-          {/* Airport count */}
-          <span
-            style={{
-              fontSize: 7,
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.3)",
-              fontFamily: "'SF Mono', Menlo, monospace",
-              textAlign: "center",
-              lineHeight: 1.2,
-            }}
-          >
-            {activeAirport && isConnected ? "1" : "0"}/{ATC_AIRPORTS.length}
           </span>
         </button>
       )}
 
-      {/* Expanded panel */}
+      {/* ── Expanded Panel ── */}
       {expanded && (
         <div
           style={{
@@ -593,258 +457,263 @@ export default function ATCPanel({
             right: 0,
             top: 0,
             bottom: 0,
-            width: 320,
+            width: 340,
             zIndex: 200,
-            background: "rgba(0,0,0,0.85)",
-            backdropFilter: "blur(12px)",
+            background: "rgba(8,8,10,0.92)",
+            backdropFilter: "blur(40px)",
+            WebkitBackdropFilter: "blur(40px)",
             borderLeft: "1px solid rgba(255,255,255,0.06)",
             display: "flex",
             flexDirection: "column",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-            animation: "atcSlideIn 0.3s ease",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif",
+            animation: "atcSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
           {/* ── Header ── */}
-          <div
-            style={{
-              padding: "16px 14px 12px",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-              flexShrink: 0,
-            }}
-          >
-            {/* Close + title row */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <div style={{ padding: "20px 16px 16px", flexShrink: 0 }}>
+            {/* Top row: close + title + status */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
               <button
                 onClick={() => setExpanded(false)}
                 style={{
                   background: "rgba(255,255,255,0.06)",
                   border: "none",
-                  color: "rgba(255,255,255,0.5)",
+                  color: "rgba(255,255,255,0.4)",
                   cursor: "pointer",
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 14,
+                  fontSize: 16,
                   flexShrink: 0,
+                  transition: "background 0.15s",
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
               >
-                ›
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
               </button>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: "rgba(255,255,255,0.6)",
-                  letterSpacing: "0.12em",
-                }}
-              >
-                ATC LIVE
+              <span style={{ fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.85)", letterSpacing: "-0.01em" }}>
+                ATC Live
               </span>
 
-              {/* REC indicator */}
-              {audioOn && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
-                  <div
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      background: isRec ? "#ef4444" : "rgba(239,68,68,0.25)",
-                      boxShadow: isRec ? "0 0 8px rgba(239,68,68,0.7)" : "none",
-                      animation: isRec ? "atcRecPulse 0.8s ease-in-out infinite" : "none",
-                      transition: "background 0.15s, box-shadow 0.15s",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 800,
-                      color: isRec ? "#ef4444" : "rgba(239,68,68,0.3)",
-                      letterSpacing: "0.1em",
-                      transition: "color 0.15s",
-                    }}
-                  >
-                    REC
-                  </span>
-                </div>
-              )}
-
-              {/* Connection indicator */}
+              {/* Live indicator */}
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 3,
-                    background: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280",
-                    boxShadow: isDemo ? "0 0 6px rgba(245,158,11,0.5)" : isConnected ? "0 0 6px rgba(34,197,94,0.5)" : "none",
-                  }}
-                />
-                <span style={{ fontSize: 9, color: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280", fontWeight: 600 }}>
-                  {isDemo ? "DEMO" : isConnected ? "LIVE" : "OFFLINE"}
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  background: connected ? "#34d399" : "rgba(255,255,255,0.15)",
+                  boxShadow: connected ? "0 0 8px rgba(52,211,153,0.5)" : "none",
+                  animation: connected ? "atcLivePulse 2s ease-in-out infinite" : "none",
+                }} />
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: connected ? "#34d399" : "rgba(255,255,255,0.25)",
+                  letterSpacing: "0.04em",
+                }}>
+                  {connected ? "Live" : "Offline"}
                 </span>
               </div>
             </div>
 
-            {/* Airport selector + audio toggle */}
-            <div style={{ display: "flex", gap: 8 }}>
+            {/* Airport selector */}
+            <div style={{
+              background: "rgba(255,255,255,0.04)",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.06)",
+              overflow: "hidden",
+              marginBottom: 12,
+            }}>
               <select
                 value={activeAirport || ""}
                 onChange={(e) => onAirportChange(e.target.value)}
                 style={{
-                  flex: 1,
-                  background: "rgba(255,255,255,0.05)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 8,
-                  color: "#fff",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  padding: "8px 10px",
+                  width: "100%",
+                  background: "transparent",
+                  border: "none",
+                  color: activeAirport ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.3)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  padding: "12px 14px",
                   cursor: "pointer",
                   outline: "none",
                   fontFamily: "inherit",
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.3)' stroke-width='2' stroke-linecap='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 12px center",
+                  paddingRight: 36,
                 }}
               >
-                <option value="" style={{ background: "#111" }}>
-                  Select Airport...
-                </option>
+                <option value="" style={{ background: "#111" }}>Select Airport...</option>
                 {ATC_AIRPORTS.map((a) => (
                   <option key={a.icao} value={a.icao} style={{ background: "#111" }}>
                     {a.icao} — {a.name} ({a.city})
                   </option>
                 ))}
               </select>
-              {/* Speaker toggle */}
-              <button
-                onClick={() => setAudioOn((p) => !p)}
-                style={{
-                  background: audioOn ? "rgba(0,229,255,0.15)" : "rgba(255,255,255,0.05)",
-                  border: `1px solid ${audioOn ? "rgba(0,229,255,0.3)" : "rgba(255,255,255,0.08)"}`,
-                  borderRadius: 8,
-                  width: 38,
-                  cursor: "pointer",
+            </div>
+
+            {/* Audio Controls */}
+            {activeAirport && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Play/Stop button */}
+                <button
+                  onClick={() => setAudioOn((p) => !p)}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                    transition: "all 0.2s",
+                    background: audioOn ? "rgba(52,211,153,0.15)" : "rgba(255,255,255,0.06)",
+                    color: audioOn ? "#34d399" : "rgba(255,255,255,0.5)",
+                  }}
+                >
+                  {audioOn ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  )}
+                  {audioOn ? "Listening" : "Listen Live"}
+                </button>
+
+                {/* Volume */}
+                {audioOn && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      {volume > 0 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}
+                      {volume > 50 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
+                    </svg>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={volume}
+                      onChange={(e) => setVolume(Number(e.target.value))}
+                      style={{ width: 60, height: 3, accentColor: "#34d399", cursor: "pointer" }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Waveform + Status */}
+            {audioOn && activeAirport && (
+              <div style={{ marginTop: 12 }}>
+                {feedError && (
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 8, fontWeight: 500 }}>
+                    {feedError}
+                  </div>
+                )}
+                <div style={{
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: 10,
+                  padding: "8px 4px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  flexShrink: 0,
-                  color: audioOn ? "#00e5ff" : "rgba(255,255,255,0.4)",
-                  fontSize: 16,
-                }}
-                title={audioOn ? "Mute ATC audio" : "Play ATC audio"}
-              >
-                {audioOn ? "\u{1F50A}" : "\u{1F507}"}
-              </button>
-            </div>
-
-            {/* ── Waveform visualizer + volume ── */}
-            {audioOn && activeAirport && (
-              <div style={{ marginTop: 10 }}>
-                {/* Feed error message */}
-                {feedError && (
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "#f87171",
-                      marginBottom: 6,
-                      fontWeight: 600,
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {feedError} — retrying...
+                }}>
+                  <canvas
+                    ref={canvasRef}
+                    width={VIS_W}
+                    height={VIS_H}
+                    style={{ width: VIS_W, height: VIS_H, display: "block" }}
+                  />
+                </div>
+                {isRec && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: 3, background: "#ef4444", boxShadow: "0 0 6px rgba(239,68,68,0.6)", animation: "atcLivePulse 1s ease-in-out infinite" }} />
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(239,68,68,0.8)", letterSpacing: "0.04em" }}>Transmission Active</span>
                   </div>
                 )}
-
-                {/* Canvas waveform */}
-                <canvas
-                  ref={canvasRef}
-                  width={VIS_W}
-                  height={VIS_H}
-                  style={{
-                    width: VIS_W,
-                    height: VIS_H,
-                    display: "block",
-                    borderRadius: 6,
-                    background: "rgba(255,255,255,0.02)",
-                  }}
-                />
-
-                {/* Volume slider */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginTop: 8,
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round">
-                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                    {volume > 0 && <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />}
-                    {volume > 50 && <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />}
-                  </svg>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={volume}
-                    onChange={(e) => setVolume(Number(e.target.value))}
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      accentColor: "#00d4ff",
-                      cursor: "pointer",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: "rgba(255,255,255,0.3)",
-                      fontFamily: "'SF Mono', Menlo, monospace",
-                      minWidth: 28,
-                      textAlign: "right",
-                    }}
-                  >
-                    {volume}%
-                  </span>
-                </div>
               </div>
             )}
           </div>
 
-          {/* ── Search bar ── */}
+          {/* ── Frequency info bar ── */}
+          {selectedAirport && (
+            <div style={{
+              padding: "8px 16px",
+              borderTop: "1px solid rgba(255,255,255,0.04)",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              flexShrink: 0,
+            }}>
+              {selectedAirport.frequencies.slice(0, 4).map((f, i) => (
+                <div key={i} style={{
+                  padding: "3px 8px",
+                  borderRadius: 6,
+                  background: "rgba(255,255,255,0.03)",
+                  fontSize: 10,
+                  color: "rgba(255,255,255,0.35)",
+                  fontFamily: "'SF Mono', Menlo, monospace",
+                  fontWeight: 500,
+                }}>
+                  <span style={{ color: "rgba(255,255,255,0.2)", textTransform: "uppercase", fontSize: 8, marginRight: 4 }}>{f.type}</span>
+                  {f.mhz}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Search ── */}
           {transcripts.length > 0 && (
-            <div style={{ padding: "8px 14px 4px", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ padding: "10px 16px 6px", flexShrink: 0 }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "rgba(255,255,255,0.04)",
+                borderRadius: 10,
+                padding: "0 12px",
+                border: "1px solid rgba(255,255,255,0.04)",
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search transcripts..."
+                  placeholder="Search..."
                   style={{
                     flex: 1,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 6,
-                    padding: "6px 10px",
-                    fontSize: 11,
-                    color: "#fff",
+                    background: "transparent",
+                    border: "none",
+                    padding: "8px 0",
+                    fontSize: 12,
+                    color: "rgba(255,255,255,0.7)",
                     outline: "none",
                     fontFamily: "inherit",
                   }}
                 />
                 {searchQuery && (
-                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'SF Mono', Menlo, monospace", whiteSpace: "nowrap" }}>
-                    {transcripts.filter((t) => t.text.toLowerCase().includes(searchQuery.toLowerCase()) || (t.callsign || "").toLowerCase().includes(searchQuery.toLowerCase())).length} matches
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontWeight: 500 }}>
+                    {transcripts.filter((t) => t.text.toLowerCase().includes(searchQuery.toLowerCase()) || (t.callsign || "").toLowerCase().includes(searchQuery.toLowerCase())).length}
                   </span>
                 )}
               </div>
             </div>
           )}
 
-          {/* ── Transcript feed ── */}
+          {/* ── Transcript Feed ── */}
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -852,21 +721,25 @@ export default function ATCPanel({
               flex: 1,
               overflowY: "auto",
               overflowX: "hidden",
-              padding: "8px 0",
+              padding: "6px 0",
             }}
           >
             {transcripts.length === 0 && (
-              <div
-                style={{
-                  padding: "40px 20px",
-                  textAlign: "center",
-                  color: "rgba(255,255,255,0.2)",
-                  fontSize: 12,
-                }}
-              >
-                {activeAirport
-                  ? "Waiting for ATC transmissions..."
-                  : "Select an airport to listen"}
+              <div style={{ padding: "60px 20px", textAlign: "center" }}>
+                <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeLinecap="round" style={{ margin: "0 auto" }}>
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                </div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.25)", fontWeight: 500, marginBottom: 4 }}>
+                  {activeAirport ? "Waiting for transmissions..." : "Select an airport"}
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.12)" }}>
+                  {activeAirport ? "Live ATC feed will appear here" : "Choose an airport above to start listening"}
+                </div>
               </div>
             )}
 
@@ -877,123 +750,96 @@ export default function ATCPanel({
                 return t.text.toLowerCase().includes(q) || (t.callsign || "").toLowerCase().includes(q);
               })
               .map((t, i) => {
-              const isEmergency = alerts.some(
-                (a) => a.timestamp === t.timestamp && a.icao === t.icao
-              );
-              return (
-                <div
-                  key={`${t.timestamp}-${i}`}
-                  style={{
-                    padding: "6px 14px",
-                    fontSize: 12,
-                    lineHeight: 1.5,
-                    background: isEmergency ? "rgba(255,60,0,0.2)" : "transparent",
-                    borderLeft: isEmergency
-                      ? "3px solid #ff6b35"
-                      : "3px solid transparent",
-                    animation: "atcFadeInLine 0.15s ease-out",
-                  }}
-                >
-                  <span
+                const isEmergency = alerts.some((a) => a.timestamp === t.timestamp && a.icao === t.icao);
+                return (
+                  <div
+                    key={`${t.timestamp}-${i}`}
                     style={{
-                      color: "rgba(255,255,255,0.25)",
-                      fontFamily: "'SF Mono', Menlo, monospace",
-                      fontSize: 10,
+                      padding: "10px 16px",
+                      borderBottom: "1px solid rgba(255,255,255,0.02)",
+                      animation: "atcFadeIn 0.2s ease-out",
+                      background: isEmergency ? "rgba(239,68,68,0.06)" : "transparent",
+                      transition: "background 0.15s",
                     }}
+                    onMouseEnter={(e) => { if (!isEmergency) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
+                    onMouseLeave={(e) => { if (!isEmergency) e.currentTarget.style.background = "transparent"; }}
                   >
-                    [{fmtTime(t.timestamp)}]
-                  </span>{" "}
-                  {t.callsign && (
-                    <>
-                      <button
-                        onClick={() =>
-                          onCallsignClick(t.callsign!, t.lat, t.lng)
-                        }
-                        style={{
-                          background: "none",
-                          border: "none",
-                          color: "#00e5ff",
-                          cursor: "pointer",
-                          fontWeight: 700,
-                          fontSize: 12,
-                          fontFamily: "'SF Mono', Menlo, monospace",
-                          padding: 0,
-                          textDecoration: "none",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.textDecoration = "underline";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.textDecoration = "none";
-                        }}
-                      >
-                        {t.callsign}
-                      </button>{" "}
-                    </>
-                  )}
-                  <span
-                    style={{
-                      color: isEmergency
-                        ? "#ff8c42"
-                        : "rgba(255,255,255,0.8)",
-                    }}
-                  >
-                    {searchQuery ? highlightMatches(t.text, searchQuery) : t.text}
-                  </span>
-                </div>
-              );
-            })}
+                    {/* Top row: callsign + time */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      {t.callsign && (
+                        <button
+                          onClick={() => onCallsignClick(t.callsign!, t.lat, t.lng)}
+                          style={{
+                            background: "rgba(52,211,153,0.08)",
+                            border: "none",
+                            color: "#34d399",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                            fontSize: 11,
+                            fontFamily: "'SF Mono', Menlo, monospace",
+                            padding: "2px 8px",
+                            borderRadius: 6,
+                            transition: "background 0.15s",
+                            letterSpacing: "0.02em",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.15)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.08)"; }}
+                        >
+                          {t.callsign}
+                        </button>
+                      )}
+                      {isEmergency && (
+                        <span style={{ fontSize: 9, fontWeight: 600, color: "#ef4444", letterSpacing: "0.04em" }}>ALERT</span>
+                      )}
+                      <span style={{
+                        fontSize: 10,
+                        color: "rgba(255,255,255,0.15)",
+                        marginLeft: "auto",
+                        fontFamily: "'SF Mono', Menlo, monospace",
+                        fontWeight: 400,
+                      }}>
+                        {fmtTime(t.timestamp)}
+                      </span>
+                    </div>
+                    {/* Transcript text */}
+                    <div style={{
+                      fontSize: 13,
+                      lineHeight: 1.55,
+                      color: isEmergency ? "rgba(248,113,113,0.9)" : "rgba(255,255,255,0.6)",
+                      fontWeight: 400,
+                      letterSpacing: "-0.005em",
+                    }}>
+                      {searchQuery ? highlightMatches(t.text, searchQuery) : t.text}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
 
-          {/* ── Footer stats ── */}
-          <div
-            style={{
-              padding: "10px 14px",
-              borderTop: "1px solid rgba(255,255,255,0.06)",
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 9,
-              color: "rgba(255,255,255,0.25)",
-              fontFamily: "'SF Mono', Menlo, monospace",
-              letterSpacing: "0.05em",
-              flexShrink: 0,
-            }}
-          >
-            <span>{transcripts.length} transcripts</span>
-            <span>{alerts.length} alerts</span>
-          </div>
-        </div>
-      )}
-
-      {/* Keyboard shortcut hint toast */}
-      {showHint && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 72,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 300,
-            background: "rgba(0,0,0,0.88)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 10,
-            padding: "8px 16px",
+          {/* ── Footer ── */}
+          <div style={{
+            padding: "12px 16px",
+            borderTop: "1px solid rgba(255,255,255,0.04)",
             display: "flex",
+            justifyContent: "space-between",
             alignItems: "center",
-            gap: 12,
-            fontSize: 11,
-            color: "rgba(255,255,255,0.6)",
-            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
-            whiteSpace: "nowrap",
-            animation: "atcFadeInLine 0.3s ease-out",
-          }}
-        >
-          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>T</kbd> toggle ATC</span>
-          <span style={{ color: "rgba(255,255,255,0.15)" }}>|</span>
-          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>M</kbd> mute</span>
-          <span style={{ color: "rgba(255,255,255,0.15)" }}>|</span>
-          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>Esc</kbd> close</span>
+            fontSize: 10,
+            color: "rgba(255,255,255,0.15)",
+            fontWeight: 500,
+            flexShrink: 0,
+          }}>
+            <span>{transcripts.length} transmissions</span>
+            <div style={{ display: "flex", gap: 12 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <kbd style={{ background: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 4, fontSize: 9, fontFamily: "'SF Mono', Menlo, monospace" }}>T</kbd>
+                <span>toggle</span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <kbd style={{ background: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 4, fontSize: 9, fontFamily: "'SF Mono', Menlo, monospace" }}>M</kbd>
+                <span>mute</span>
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </>
