@@ -585,42 +585,73 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const acAlt = selectedFlight.altitude * 0.3048;
         console.log(`[SkyWay] Drawing route: orig=${hasOrig}(${origin.code}), dest=${hasDest}(${destination.code}), alt=${acAlt}m`);
 
-        // Traveled path: origin → aircraft
-        if (hasOrig) {
-          const pts = gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 60);
-          const coords = pts.map((p, i) => ({
-            lat: p.lat, lng: p.lng,
-            altitude: 1000 + (acAlt - 1000) * (i / pts.length),
-          }));
-          const traveled = new Polyline3DElement({
+        // Full route beam: origin → destination (one continuous bright arc)
+        if (hasOrig && hasDest) {
+          const pts = gcPoints(origLat, origLng, destLat, destLng, 100);
+          // Arc up to cruise altitude at midpoint, back down at ends
+          const coords = pts.map((p, i) => {
+            const t = i / (pts.length - 1);
+            const arcAlt = 1000 + (acAlt - 1000) * Math.sin(t * Math.PI);
+            return { lat: p.lat, lng: p.lng, altitude: arcAlt };
+          });
+
+          // Outer glow (wide, subtle)
+          const glowOuter = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "rgba(0,229,255,0.06)",
+            strokeWidth: 28, coordinates: coords, drawsOccludedSegments: true,
+          });
+          map.append(glowOuter);
+          routeRef.current.push(glowOuter);
+
+          // Mid glow
+          const glowMid = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "rgba(0,229,255,0.15)",
+            strokeWidth: 14, coordinates: coords, drawsOccludedSegments: true,
+          });
+          map.append(glowMid);
+          routeRef.current.push(glowMid);
+
+          // Core beam (bright solid)
+          const beam = new Polyline3DElement({
             altitudeMode: "ABSOLUTE", strokeColor: "#00e5ff",
             strokeWidth: 5, coordinates: coords, drawsOccludedSegments: true,
           });
-          map.append(traveled);
-          routeRef.current.push(traveled);
+          map.append(beam);
+          routeRef.current.push(beam);
 
-          // Glow trail
-          const glowTrail = new Polyline3DElement({
-            altitudeMode: "ABSOLUTE", strokeColor: "rgba(0,229,255,0.1)",
-            strokeWidth: 16, coordinates: coords, drawsOccludedSegments: true,
+          // Inner white-hot center
+          const core = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "rgba(255,255,255,0.6)",
+            strokeWidth: 2, coordinates: coords, drawsOccludedSegments: true,
           });
-          map.append(glowTrail);
-          routeRef.current.push(glowTrail);
-        }
-
-        // Remaining path: aircraft → destination
-        if (hasDest) {
+          map.append(core);
+          routeRef.current.push(core);
+        } else if (hasOrig) {
+          // Only origin known — draw origin → plane
+          const pts = gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 60);
+          const coords = pts.map((p, i) => ({
+            lat: p.lat, lng: p.lng,
+            altitude: 1000 + (acAlt - 1000) * (i / (pts.length - 1)),
+          }));
+          const line = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "#00e5ff",
+            strokeWidth: 5, coordinates: coords, drawsOccludedSegments: true,
+          });
+          map.append(line);
+          routeRef.current.push(line);
+        } else if (hasDest) {
+          // Only destination known — draw plane → dest
           const pts = gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destLat, destLng, 60);
           const coords = pts.map((p, i) => ({
             lat: p.lat, lng: p.lng,
-            altitude: acAlt + (1000 - acAlt) * (i / pts.length),
+            altitude: acAlt - (acAlt - 1000) * (i / (pts.length - 1)),
           }));
-          const remaining = new Polyline3DElement({
-            altitudeMode: "ABSOLUTE", strokeColor: "rgba(59,184,232,0.3)",
-            strokeWidth: 3, coordinates: coords, drawsOccludedSegments: true,
+          const line = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "#00e5ff",
+            strokeWidth: 5, coordinates: coords, drawsOccludedSegments: true,
           });
-          map.append(remaining);
-          routeRef.current.push(remaining);
+          map.append(line);
+          routeRef.current.push(line);
         }
 
         // Info label above aircraft
@@ -641,16 +672,33 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         map.panTo({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
         if (map.getZoom() < 5) map.setZoom(5);
 
-        const allPts: any[] = [];
-        if (hasOrig) allPts.push(...gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 40));
-        allPts.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
-        if (hasDest) allPts.push(...gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destLat, destLng, 40));
-        if (allPts.length >= 2) {
+        // Full route: origin → destination
+        if (hasOrig && hasDest) {
+          const allPts = gcPoints(origLat, origLng, destLat, destLng, 80);
+          // Glow
+          const glow = new google.maps.Polyline({
+            path: allPts, strokeColor: "#00e5ff", strokeWeight: 10,
+            strokeOpacity: 0.15, geodesic: true, map,
+          });
+          routeRef.current.push(glow);
+          // Core
           const line = new google.maps.Polyline({
             path: allPts, strokeColor: "#00e5ff", strokeWeight: 3,
-            strokeOpacity: 0.7, geodesic: true, map,
+            strokeOpacity: 0.9, geodesic: true, map,
           });
           routeRef.current.push(line);
+        } else {
+          const allPts: any[] = [];
+          if (hasOrig) allPts.push(...gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 40));
+          allPts.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
+          if (hasDest) allPts.push(...gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destLat, destLng, 40));
+          if (allPts.length >= 2) {
+            const line = new google.maps.Polyline({
+              path: allPts, strokeColor: "#00e5ff", strokeWeight: 3,
+              strokeOpacity: 0.7, geodesic: true, map,
+            });
+            routeRef.current.push(line);
+          }
         }
         const iw = new google.maps.InfoWindow({
           content: flightPopupHtml(selectedFlight),
