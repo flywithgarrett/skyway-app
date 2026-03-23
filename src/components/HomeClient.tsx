@@ -10,6 +10,7 @@ import FlightListSidebar from "@/components/FlightListSidebar";
 import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
 import CommunityView from "@/components/CommunityView";
+import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
@@ -17,18 +18,13 @@ import { Flight } from "@/lib/types";
 
 const FlightDetailPanel = dynamic(() => import("@/components/FlightDetailPanel"), { ssr: false });
 
-type Tab = "map" | "flights" | "airports" | "community" | "alerts";
+type Tab = "map" | "flights" | "satellites" | "community" | "alerts";
 
 const placeholders: Record<string, { title: string; icon: string; description: string }> = {
   flights: {
     title: "Flight Board",
     icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 16v-2l-8-5V3.5A1.5 1.5 0 0 0 11.5 2 1.5 1.5 0 0 0 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`,
     description: "Live departure and arrival boards with real-time status updates, gate assignments, and delay tracking.",
-  },
-  airports: {
-    title: "Airport Explorer",
-    icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg>`,
-    description: "Detailed airport information including weather, runway status, terminal maps, and traffic density.",
   },
 };
 
@@ -172,6 +168,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           }}
         />
       )}
+
+      {activeTab === "satellites" && <SatelliteView />}
 
       {activeTab === "community" && <CommunityView />}
 
