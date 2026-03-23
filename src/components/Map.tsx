@@ -30,17 +30,22 @@ const MAJOR_AIRPORTS = new Set([
   "YYZ","YVR","YUL","YYC","MEX","CUN","LHR","CDG","FRA","AMS",
 ]);
 
-/* ── Plane SVG — bright white aircraft, Apple-premium feel ── */
+/* ── Plane SVG — bold bright white aircraft, Apple-premium feel ── */
 function planeSvg(color: string, heading: number, size = 32, glow = false): string {
-  // Compensate for map brightness filter — make everything overbright
-  const glowFilter = glow
-    ? `<defs><filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="${color}" flood-opacity="1"/></filter></defs>`
-    : `<defs><filter id="s" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur in="SourceGraphic" stdDeviation="0.3"/><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="1"/><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="${color}" flood-opacity="0.5"/></filter></defs>`;
-  const filterAttr = glow ? ' filter="url(#g)"' : ' filter="url(#s)"';
+  const filterId = glow ? "pg" : "ps";
+  const filter = glow
+    ? `<filter id="${filterId}" x="-80%" y="-80%" width="260%" height="260%">
+        <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="${color}" flood-opacity="1"/>
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.7"/>
+      </filter>`
+    : `<filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.8"/>
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.9"/>
+      </filter>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
-    ${glowFilter}
-    <g transform="rotate(${heading}, 32, 32)"${filterAttr}>
-      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(0,0,0,0.6)" stroke-width="1"/>
+    <defs>${filter}</defs>
+    <g transform="rotate(${heading}, 32, 32)" filter="url(#${filterId})">
+      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(20,20,20,0.5)" stroke-width="0.8"/>
     </g>
   </svg>`;
 }
@@ -423,7 +428,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
         const sz = isSel ? 68 : 56;
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${altStr} · ${f.speed} kts`;
@@ -471,7 +476,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
         const sz = isSel ? 68 : 56;
         const mkEl = () => {
           const div = document.createElement("div");
@@ -712,7 +717,23 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.6) saturate(0.55) contrast(1.1)" }} />
+      <style>{`
+        .skyway-map-container canvas,
+        .skyway-map-container .gm-style > div > div > div > div > canvas,
+        .skyway-map-container iframe,
+        .skyway-map-container img:not([data-skyway-marker]) {
+          filter: brightness(0.55) saturate(0.5) contrast(1.15);
+        }
+        /* Keep markers and overlays at full brightness */
+        .skyway-map-container gmp-marker-3d,
+        .skyway-map-container gmp-marker-3d-interactive,
+        .skyway-map-container gmp-polyline-3d,
+        .skyway-map-container .gm-style-iw,
+        .skyway-map-container [data-skyway-marker] {
+          filter: none !important;
+        }
+      `}</style>
+      <div ref={containerRef} className="absolute inset-0 z-0 skyway-map-container" />
     </>
   );
 }
