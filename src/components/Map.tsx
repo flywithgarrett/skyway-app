@@ -38,18 +38,25 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Airport dot SVG ── */
-function airportDotSvg(size = 28): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-    <defs><radialGradient id="ag" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="rgba(59,184,232,0.9)"/>
-      <stop offset="40%" stop-color="rgba(59,184,232,0.5)"/>
+/* ── Airport marker SVG (dot + label in one SVG for 3D markers) ── */
+function airportMarkerSvg(code: string): string {
+  // Single SVG with glowing dot and label text — required by Marker3DElement
+  const w = 80, h = 52, cx = w / 2, dotY = 14;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs><radialGradient id="ag_${code}" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(80,210,255,0.95)"/>
+      <stop offset="35%" stop-color="rgba(59,184,232,0.6)"/>
       <stop offset="100%" stop-color="rgba(59,184,232,0)"/>
     </radialGradient></defs>
-    <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="url(#ag)"/>
-    <circle cx="${size / 2}" cy="${size / 2}" r="${size * 0.14}" fill="#3bb8e8"/>
-    <circle cx="${size / 2}" cy="${size / 2}" r="${size * 0.08}" fill="#fff" opacity="0.7"/>
+    <circle cx="${cx}" cy="${dotY}" r="14" fill="url(#ag_${code})"/>
+    <circle cx="${cx}" cy="${dotY}" r="4" fill="#5dd8ff"/>
+    <circle cx="${cx}" cy="${dotY}" r="2" fill="#fff" opacity="0.8"/>
+    <text x="${cx}" y="${h - 4}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="800" fill="#5dd8ff" letter-spacing="0.8">${code}</text>
   </svg>`;
+}
+
+function airportMarkerUrl(code: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(airportMarkerSvg(code))}`;
 }
 
 /* ── Flight popup ── */
@@ -221,12 +228,14 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
               label: apt.code,
             });
 
-            // Custom content: glowing dot + label
+            // Content must be <img> or <svg> inside <template> for 3D markers
             const tpl = document.createElement("template");
-            const wrapper = document.createElement("div");
-            wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:3px;";
-            wrapper.innerHTML = `${airportDotSvg(36)}<div style="color:#5dd8ff;font-size:13px;font-weight:800;font-family:-apple-system,sans-serif;text-shadow:0 0 8px rgba(0,0,0,1),0 0 16px rgba(59,184,232,0.5);letter-spacing:0.8px;white-space:nowrap;">${apt.code}</div>`;
-            tpl.content.appendChild(wrapper);
+            const img = document.createElement("img");
+            img.src = airportMarkerUrl(apt.code);
+            img.width = 80;
+            img.height = 52;
+            img.style.display = "block";
+            tpl.content.appendChild(img);
             marker.append(tpl);
             map.append(marker);
             airportMarkersRef.current.push(marker);
@@ -239,8 +248,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (cancelled) return;
         for (const apt of majors) {
           const el = document.createElement("div");
-          el.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
-          el.innerHTML = `${airportDotSvg(28)}<div style="color:#3bb8e8;font-size:11px;font-weight:700;text-shadow:0 0 6px #000;">${apt.code}</div>`;
+          el.innerHTML = airportMarkerSvg(apt.code);
           const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: el });
           airportMarkersRef.current.push(m);
         }
@@ -447,16 +455,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           routeRef.current.push(remaining);
         }
 
-        // Info popup
+        // Info label above aircraft
+        const altStr = selectedFlight.altitude >= 1000
+          ? `FL${Math.round(selectedFlight.altitude / 100)}`
+          : `${selectedFlight.altitude.toLocaleString()} ft`;
+        const labelText = `${selectedFlight.flightNumber} · ${selectedFlight.aircraft || ""}\n${selectedFlight.origin.code} → ${selectedFlight.destination.code}\n${altStr} · ${selectedFlight.speed} kts`;
         const popupMarker = new Marker3DElement({
-          position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: acAlt + 12000 },
+          position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: acAlt + 5000 },
           altitudeMode: "ABSOLUTE", collisionBehavior: "REQUIRED", zIndex: 10000,
+          label: labelText,
         });
-        const popTpl = document.createElement("template");
-        const div = document.createElement("div");
-        div.innerHTML = flightPopupHtml(selectedFlight);
-        popTpl.content.appendChild(div);
-        popupMarker.append(popTpl);
         map.append(popupMarker);
         popupRef.current = popupMarker;
 
