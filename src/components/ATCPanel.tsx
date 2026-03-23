@@ -320,6 +320,7 @@ export default function ATCPanel({
   const [volume, setVolume] = useState(70);
   const [isRec, setIsRec] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [showHint, setShowHint] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevTranscriptCountRef = useRef(0);
@@ -332,6 +333,36 @@ export default function ATCPanel({
 
   // Stabilize the onRecChange callback
   const handleRecChange = useCallback((rec: boolean) => setIsRec(rec), []);
+
+  // ── Keyboard shortcuts ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when typing in an input/textarea/select
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "t" || e.key === "T") {
+        setExpanded((prev) => !prev);
+      } else if (e.key === "m" || e.key === "M") {
+        setAudioOn((prev) => !prev);
+      } else if (e.key === "Escape") {
+        setExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // ── First-load hint toast ──
+  useEffect(() => {
+    const hintKey = "skyway-atc-hint-shown";
+    if (typeof window !== "undefined" && !sessionStorage.getItem(hintKey)) {
+      sessionStorage.setItem(hintKey, "1");
+      setShowHint(true);
+      const timer = setTimeout(() => setShowHint(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Waveform renderer
   useWaveformRenderer(
@@ -837,6 +868,38 @@ export default function ATCPanel({
             <span>{transcripts.length} transcripts</span>
             <span>{alerts.length} alerts</span>
           </div>
+        </div>
+      )}
+
+      {/* Keyboard shortcut hint toast */}
+      {showHint && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 72,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 300,
+            background: "rgba(0,0,0,0.88)",
+            backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 10,
+            padding: "8px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontSize: 11,
+            color: "rgba(255,255,255,0.6)",
+            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+            whiteSpace: "nowrap",
+            animation: "atcFadeInLine 0.3s ease-out",
+          }}
+        >
+          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>T</kbd> toggle ATC</span>
+          <span style={{ color: "rgba(255,255,255,0.15)" }}>|</span>
+          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>M</kbd> mute</span>
+          <span style={{ color: "rgba(255,255,255,0.15)" }}>|</span>
+          <span><kbd style={{ background: "rgba(255,255,255,0.1)", padding: "2px 6px", borderRadius: 4, fontFamily: "'SF Mono', Menlo, monospace", fontSize: 10 }}>Esc</kbd> close</span>
         </div>
       )}
     </>
