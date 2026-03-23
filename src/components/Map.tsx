@@ -12,13 +12,61 @@ interface MapProps {
   onSelectFlight: (flight: Flight | null) => void;
 }
 
+// Generate a clean plane icon on canvas — FlightAware style
+function createPlaneImage(color: string, size: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  ctx.translate(size / 2, size / 2);
+  const s = size * 0.38;
+
+  ctx.beginPath();
+  // Nose
+  ctx.moveTo(0, -s * 0.85);
+  // Right fuselage to wing
+  ctx.lineTo(s * 0.10, -s * 0.55);
+  // Right wing
+  ctx.lineTo(s * 0.75, s * 0.05);
+  ctx.lineTo(s * 0.70, s * 0.15);
+  // Back to fuselage
+  ctx.lineTo(s * 0.10, -s * 0.05);
+  // Right fuselage aft
+  ctx.lineTo(s * 0.08, s * 0.50);
+  // Right tail
+  ctx.lineTo(s * 0.32, s * 0.72);
+  ctx.lineTo(s * 0.28, s * 0.82);
+  // Tail center
+  ctx.lineTo(s * 0.05, s * 0.65);
+  ctx.lineTo(0, s * 0.85);
+  // Left tail
+  ctx.lineTo(-s * 0.05, s * 0.65);
+  ctx.lineTo(-s * 0.28, s * 0.82);
+  ctx.lineTo(-s * 0.32, s * 0.72);
+  ctx.lineTo(-s * 0.08, s * 0.50);
+  // Left fuselage aft
+  ctx.lineTo(-s * 0.10, -s * 0.05);
+  // Left wing
+  ctx.lineTo(-s * 0.70, s * 0.15);
+  ctx.lineTo(-s * 0.75, s * 0.05);
+  ctx.lineTo(-s * 0.10, -s * 0.55);
+  ctx.closePath();
+
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  return canvas;
+}
+
 export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
-
   const selectedRef = useRef(selectedFlight);
   selectedRef.current = selectedFlight;
 
@@ -42,35 +90,44 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/satellite-v9",
+      style: "mapbox://styles/mapbox/dark-v11",
       projection: "globe",
       center: [-95, 38],
-      zoom: 2.8,
+      zoom: 3.2,
       minZoom: 1.5,
-      maxZoom: 14,
+      maxZoom: 18,
       attributionControl: false,
       antialias: true,
     });
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), "bottom-right");
-
     map.on("style.load", () => {
-      // Dark atmosphere / space feel
+      // Dark space atmosphere
       map.setFog({
         color: "rgb(5, 10, 28)",
         "high-color": "rgb(20, 40, 80)",
-        "horizon-blend": 0.08,
+        "horizon-blend": 0.04,
         "space-color": "rgb(3, 5, 12)",
-        "star-intensity": 0.95,
+        "star-intensity": 0.85,
       });
 
-      // Airport dots layer
+      // Generate plane icon images
+      const planeNormal = createPlaneImage("rgba(225, 175, 55, 0.92)", 64);
+      const planeSelected = createPlaneImage("rgba(0, 229, 255, 1.0)", 64);
+      const planeDimmed = createPlaneImage("rgba(225, 175, 55, 0.25)", 64);
+
+      const toImageData = (c: HTMLCanvasElement) => {
+        const ctx = c.getContext("2d")!;
+        const d = ctx.getImageData(0, 0, c.width, c.height);
+        return { width: c.width, height: c.height, data: new Uint8Array(d.data.buffer) };
+      };
+      map.addImage("plane-normal", toImageData(planeNormal), { sdf: false });
+      map.addImage("plane-selected", toImageData(planeSelected), { sdf: false });
+      map.addImage("plane-dimmed", toImageData(planeDimmed), { sdf: false });
+
+      // --- Airport layers ---
       map.addSource("airports", {
         type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: [],
-        },
+        data: { type: "FeatureCollection", features: [] },
       });
 
       map.addLayer({
@@ -78,8 +135,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         type: "circle",
         source: "airports",
         paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 6, 6, 10, 10, 14],
-          "circle-color": "rgba(59, 184, 232, 0.12)",
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 5, 6, 9, 10, 13],
+          "circle-color": "rgba(40, 200, 80, 0.15)",
           "circle-blur": 1,
         },
       });
@@ -90,9 +147,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         source: "airports",
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 2.5, 6, 4, 10, 6],
-          "circle-color": "#3bb8e8",
+          "circle-color": "#2cc855",
           "circle-stroke-width": 1,
-          "circle-stroke-color": "rgba(59, 184, 232, 0.4)",
+          "circle-stroke-color": "rgba(40, 200, 80, 0.5)",
         },
       });
 
@@ -103,103 +160,94 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         minzoom: 3,
         layout: {
           "text-field": ["get", "code"],
-          "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
-          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 9, 8, 12],
+          "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 8, 13],
           "text-offset": [0, 1.2],
           "text-anchor": "top",
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#6badc9",
-          "text-halo-color": "rgba(5, 10, 28, 0.9)",
+          "text-color": "#2cc855",
+          "text-halo-color": "rgba(5, 10, 28, 0.95)",
           "text-halo-width": 1.5,
         },
       });
 
-      // Flight dots layer
+      // --- Flight layers: individual planes with rotation ---
       map.addSource("flights", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        cluster: true,
-        clusterMaxZoom: 5,
-        clusterRadius: 30,
       });
 
-      // Cluster circles
+      // Plane icons — symbol layer with rotation
       map.addLayer({
-        id: "flight-clusters",
-        type: "circle",
-        source: "flights",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["get", "point_count"], 2, 8, 50, 18, 200, 24],
-          "circle-color": "rgba(59, 184, 232, 0.25)",
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "rgba(59, 184, 232, 0.5)",
-          "circle-blur": 0.3,
-        },
-      });
-
-      map.addLayer({
-        id: "flight-cluster-count",
+        id: "flight-planes",
         type: "symbol",
         source: "flights",
-        filter: ["has", "point_count"],
         layout: {
-          "text-field": "{point_count_abbreviated}",
+          "icon-image": [
+            "case",
+            ["==", ["get", "selectState"], "selected"], "plane-selected",
+            ["==", ["get", "selectState"], "dimmed"], "plane-dimmed",
+            "plane-normal",
+          ],
+          "icon-size": ["interpolate", ["linear"], ["zoom"],
+            1.5, 0.28,
+            3, 0.38,
+            5, 0.55,
+            8, 0.75,
+            12, 1.0,
+          ],
+          "icon-rotate": ["get", "heading"],
+          "icon-rotation-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "symbol-sort-key": [
+            "case",
+            ["==", ["get", "selectState"], "selected"], 1,
+            0,
+          ],
+        },
+      });
+
+      // Flight callsign labels — visible at closer zoom
+      map.addLayer({
+        id: "flight-labels",
+        type: "symbol",
+        source: "flights",
+        minzoom: 7,
+        filter: ["!", ["==", ["get", "selectState"], "dimmed"]],
+        layout: {
+          "text-field": ["get", "flightNumber"],
           "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
-          "text-size": 11,
+          "text-size": 10,
+          "text-offset": [0, 1.6],
+          "text-anchor": "top",
+          "text-allow-overlap": false,
         },
         paint: {
-          "text-color": "#3bb8e8",
+          "text-color": "rgba(225, 175, 55, 0.85)",
+          "text-halo-color": "rgba(0, 0, 0, 0.85)",
+          "text-halo-width": 1,
         },
       });
 
-      // Individual flight dots with glow
-      map.addLayer({
-        id: "flight-glow",
-        type: "circle",
-        source: "flights",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 4, 6, 7, 10, 10],
-          "circle-color": "rgba(59, 184, 232, 0.15)",
-          "circle-blur": 1,
-        },
-      });
-
-      map.addLayer({
-        id: "flight-dots",
-        type: "circle",
-        source: "flights",
-        filter: ["!", ["has", "point_count"]],
-        paint: {
-          "circle-radius": ["interpolate", ["linear"], ["zoom"], 2, 1.5, 6, 3, 10, 5],
-          "circle-color": [
-            "case",
-            ["==", ["get", "selected"], true],
-            "#00e5ff",
-            "#3bb8e8",
-          ],
-          "circle-stroke-width": [
-            "case",
-            ["==", ["get", "selected"], true],
-            2,
-            0.5,
-          ],
-          "circle-stroke-color": [
-            "case",
-            ["==", ["get", "selected"], true],
-            "rgba(0, 229, 255, 0.6)",
-            "rgba(59, 184, 232, 0.3)",
-          ],
-        },
-      });
-
-      // Route line for selected flight
+      // --- Route line for selected flight ---
       map.addSource("route", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "route-glow",
+        type: "line",
+        source: "route",
+        paint: {
+          "line-color": "#00e5ff",
+          "line-width": 4,
+          "line-opacity": 0.15,
+          "line-blur": 3,
+        },
       });
 
       map.addLayer({
@@ -207,16 +255,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         type: "line",
         source: "route",
         paint: {
-          "line-color": "#3bb8e8",
-          "line-width": 1.5,
-          "line-opacity": 0.6,
-          "line-dasharray": [3, 3],
+          "line-color": "#00e5ff",
+          "line-width": 2,
+          "line-opacity": 0.7,
+          "line-dasharray": [4, 4],
         },
       });
     });
 
-    // Click on flight dot
-    map.on("click", "flight-dots", (e) => {
+    // Click on flight plane
+    map.on("click", "flight-planes", (e) => {
       if (!e.features || e.features.length === 0) return;
       const id = e.features[0].properties?.id;
       if (selectedRef.current?.id === id) {
@@ -229,33 +277,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     });
 
-    // Click cluster to zoom
-    map.on("click", "flight-clusters", (e) => {
-      if (!e.features || e.features.length === 0) return;
-      const clusterId = e.features[0].properties?.cluster_id;
-      const source = map.getSource("flights") as mapboxgl.GeoJSONSource;
-      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err || zoom == null) return;
-        const geom = e.features![0].geometry;
-        if (geom.type === "Point") {
-          map.easeTo({
-            center: geom.coordinates as [number, number],
-            zoom,
-          });
-        }
-      });
-    });
-
-    map.on("mouseenter", "flight-dots", () => {
+    map.on("mouseenter", "flight-planes", () => {
       map.getCanvas().style.cursor = "pointer";
     });
-    map.on("mouseleave", "flight-dots", () => {
-      map.getCanvas().style.cursor = "";
-    });
-    map.on("mouseenter", "flight-clusters", () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", "flight-clusters", () => {
+    map.on("mouseleave", "flight-planes", () => {
       map.getCanvas().style.cursor = "";
     });
 
@@ -294,12 +319,13 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const map = mapRef.current;
     if (!map) return;
 
-    // Store flights globally for click handler lookup
     (window as unknown as { __skyway_flights?: Flight[] }).__skyway_flights = flights;
 
     const airborne = flights.filter(
-      (f) => f.status === "en-route" || (f.progress > 0 && f.progress < 1)
+      (f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0
     );
+
+    const hasSelection = selectedRef.current !== null;
 
     const update = () => {
       const source = map.getSource("flights") as mapboxgl.GeoJSONSource | undefined;
@@ -312,7 +338,12 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           properties: {
             id: f.id,
             flightNumber: f.flightNumber,
-            selected: f.id === selectedFlight?.id,
+            heading: f.heading,
+            altitude: f.altitude,
+            speed: f.speed,
+            selectState: hasSelection
+              ? (f.id === selectedRef.current?.id ? "selected" : "dimmed")
+              : "normal",
           },
         })),
       });
@@ -322,7 +353,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     else map.on("style.load", update);
   }, [flights, selectedFlight]);
 
-  // Update route line + popup for selected flight
+  // Route line + fly-to for selected flight
   const updateRoute = useCallback(() => {
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
@@ -337,45 +368,60 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       return;
     }
 
-    // Great circle approximation with intermediate points
+    // Great circle route
+    const { origin, destination } = selectedFlight;
+    const hasOrig = origin.lat !== 0 || origin.lng !== 0;
+    const hasDest = destination.lat !== 0 || destination.lng !== 0;
     const coords: [number, number][] = [];
     const steps = 80;
-    const { origin, destination } = selectedFlight;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const lat = origin.lat + t * (destination.lat - origin.lat);
-      const lng = origin.lng + t * (destination.lng - origin.lng);
-      coords.push([lng, lat]);
+
+    if (hasOrig && hasDest) {
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        coords.push([
+          origin.lng + t * (destination.lng - origin.lng),
+          origin.lat + t * (destination.lat - origin.lat),
+        ]);
+      }
+    } else if (hasOrig) {
+      coords.push([origin.lng, origin.lat], [selectedFlight.currentLng, selectedFlight.currentLat]);
+    } else if (hasDest) {
+      coords.push([selectedFlight.currentLng, selectedFlight.currentLat], [destination.lng, destination.lat]);
     }
 
     source.setData({
       type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          geometry: { type: "LineString", coordinates: coords },
-          properties: {},
-        },
-      ],
+      features: coords.length > 1
+        ? [{ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} }]
+        : [],
     });
 
-    // Popup on the aircraft position
+    // Fly to selected aircraft
+    map.flyTo({
+      center: [selectedFlight.currentLng, selectedFlight.currentLat],
+      zoom: Math.max(map.getZoom(), 5),
+      duration: 1500,
+      essential: true,
+    });
+
+    // Popup
     const popup = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: false,
-      className: "flight-popup-3d",
-      offset: [0, -12],
-      maxWidth: "220px",
+      className: "flight-popup",
+      offset: [0, -16],
+      maxWidth: "240px",
     })
       .setLngLat([selectedFlight.currentLng, selectedFlight.currentLat])
       .setHTML(
         `<div class="popup-inner">
           <div class="popup-flight">${selectedFlight.flightNumber}</div>
-          <div class="popup-airline">${selectedFlight.airline.name}</div>
+          <div class="popup-airline">${selectedFlight.airline.name}${selectedFlight.aircraft ? " · " + selectedFlight.aircraft : ""}</div>
           <div class="popup-route">${selectedFlight.origin.code} → ${selectedFlight.destination.code}</div>
           <div class="popup-details">
-            <span>ALT ${(selectedFlight.altitude / 1000).toFixed(1)}k</span>
-            <span>SPD ${selectedFlight.speed} kts</span>
+            <span>${selectedFlight.altitude.toLocaleString()} ft</span>
+            <span>${selectedFlight.speed} kts</span>
+            <span>HDG ${selectedFlight.heading}°</span>
           </div>
         </div>`
       )
@@ -395,39 +441,48 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   return (
     <>
       <style>{`
-        .flight-popup-3d .mapboxgl-popup-content {
-          background: rgba(8, 16, 32, 0.85) !important;
-          backdrop-filter: blur(12px) !important;
-          -webkit-backdrop-filter: blur(12px) !important;
-          border: 1px solid rgba(59, 184, 232, 0.25) !important;
-          border-radius: 10px !important;
+        .flight-popup .mapboxgl-popup-content {
+          background: rgba(8, 16, 32, 0.88) !important;
+          backdrop-filter: blur(16px) saturate(1.5) !important;
+          -webkit-backdrop-filter: blur(16px) saturate(1.5) !important;
+          border: 1px solid rgba(0, 229, 255, 0.2) !important;
+          border-radius: 12px !important;
           padding: 0 !important;
-          box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5), 0 0 20px rgba(59, 184, 232, 0.08) !important;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 229, 255, 0.06) !important;
         }
-        .flight-popup-3d .mapboxgl-popup-tip {
-          border-top-color: rgba(8, 16, 32, 0.85) !important;
+        .flight-popup .mapboxgl-popup-tip {
+          border-top-color: rgba(8, 16, 32, 0.88) !important;
         }
         .popup-inner {
-          padding: 10px 14px;
+          padding: 12px 16px;
           color: #c8dae8;
           font-size: 12px;
-          line-height: 1.5;
+          line-height: 1.6;
         }
         .popup-flight {
           font-weight: 700;
-          font-size: 14px;
+          font-size: 15px;
           color: #00e5ff;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.6px;
         }
-        .popup-airline { color: #8899aa; font-size: 11px; }
-        .popup-route { color: #6badc9; margin-top: 2px; }
+        .popup-airline {
+          color: #6d8899;
+          font-size: 11px;
+          margin-top: 1px;
+        }
+        .popup-route {
+          color: #8ab4cc;
+          margin-top: 4px;
+          font-weight: 500;
+        }
         .popup-details {
-          margin-top: 6px;
+          margin-top: 8px;
           display: flex;
-          gap: 10px;
-          color: #4a6d85;
+          gap: 12px;
+          color: #4a7090;
           font-size: 10px;
-          font-family: monospace;
+          font-family: "SF Mono", "Menlo", monospace;
+          letter-spacing: 0.3px;
         }
       `}</style>
       <div ref={containerRef} className="absolute inset-0 z-0" />
