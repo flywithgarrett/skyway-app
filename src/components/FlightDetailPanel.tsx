@@ -8,6 +8,7 @@ interface FlightDetailPanelProps {
   flight: Flight;
   detail: FlightDetail | null;
   onClose: () => void;
+  onShowOnMap?: () => void;
 }
 
 function StatusIndicator({ status }: { status: string }) {
@@ -66,12 +67,27 @@ function guessWeightClass(ac: string | null): string | null {
   return "Light";
 }
 
-export default function FlightDetailPanel({ flight, detail, onClose }: FlightDetailPanelProps) {
+function computeTimes(flight: Flight) {
+  const dep = flight.actualDep || flight.scheduledDep;
+  const arr = flight.estimatedArr || flight.scheduledArr;
+  if (!dep || !arr) return { elapsed: null, remaining: null, total: null };
+  const depMs = new Date(dep).getTime();
+  const arrMs = new Date(arr).getTime();
+  const nowMs = Date.now();
+  const totalMin = Math.max(0, Math.round((arrMs - depMs) / 60000));
+  const elapsedMin = Math.max(0, Math.round((nowMs - depMs) / 60000));
+  const remainingMin = Math.max(0, totalMin - elapsedMin);
+  const fmt = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+  return { elapsed: fmt(elapsedMin), remaining: fmt(remainingMin), total: fmt(totalMin) };
+}
+
+export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap }: FlightDetailPanelProps) {
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
   const progressPercent = Math.round(flight.progress);
   const aircraft = flight.aircraft || detail?.aircraftType || null;
   const registration = flight.registration || detail?.registration || null;
   const weightClass = guessWeightClass(aircraft);
+  const times = computeTimes(flight);
 
   return (
     <div className="detail-panel-slide fixed top-0 right-0 bottom-0 z-40 w-full sm:w-96 md:w-[420px] flex flex-col">
@@ -190,6 +206,35 @@ export default function FlightDetailPanel({ flight, detail, onClose }: FlightDet
             </section>
           )}
 
+          {/* Flight Time Summary */}
+          {times.elapsed && (
+            <section>
+              <SectionLabel>Flight Time</SectionLabel>
+              <div className="grid grid-cols-3 gap-1.5">
+                <DataCell label="Elapsed" value={times.elapsed || "—"} mono cyan />
+                <DataCell label="Total" value={times.total || "—"} mono />
+                <DataCell label="Remaining" value={times.remaining || "—"} mono cyan />
+              </div>
+            </section>
+          )}
+
+          {/* Show on Map Button */}
+          {onShowOnMap && (
+            <button
+              onClick={onShowOnMap}
+              className="w-full py-3 rounded-2xl text-sm font-semibold tracking-wide"
+              style={{
+                background: "linear-gradient(135deg, rgba(0,180,216,0.15) 0%, rgba(0,119,182,0.15) 100%)",
+                border: "1px solid rgba(0,229,255,0.2)",
+                color: "#00e5ff",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+            >
+              ✈ Show Route on Map
+            </button>
+          )}
+
           {/* Live Position */}
           <section>
             <SectionLabel>Live Position</SectionLabel>
@@ -201,6 +246,12 @@ export default function FlightDetailPanel({ flight, detail, onClose }: FlightDet
               <DataCell label="Heading" value={fmtHeading(flight.heading)} mono />
               {flight.verticalRate != null && (
                 <DataCell label="Vert Rate" value={`${flight.verticalRate > 0 ? "+" : ""}${flight.verticalRate} fpm`} mono />
+              )}
+              {flight.squawk && (
+                <DataCell label="Squawk" value={flight.squawk} mono cyan={flight.squawk === "7700" || flight.squawk === "7600" || flight.squawk === "7500"} />
+              )}
+              {flight.geoAltitude != null && (
+                <DataCell label="Geo Altitude" value={`${flight.geoAltitude.toLocaleString()} ft`} mono />
               )}
             </div>
           </section>

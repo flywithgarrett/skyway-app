@@ -165,6 +165,11 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           flight={detailFlight}
           detail={detail}
           onClose={() => setDetailFlight(null)}
+          onShowOnMap={() => {
+            setSelectedFlight(detailFlight);
+            setDetailFlight(null);
+            setActiveTab("map");
+          }}
         />
       )}
 
