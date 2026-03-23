@@ -200,33 +200,39 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (!map) return;
     let cancelled = false;
 
-    // Delay airport rendering so map fully settles
-    const timer = setTimeout(async () => {
+    (async () => {
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
       if (cancelled) return;
 
       const majors = airports.filter((a) => MAJOR_AIRPORTS.has(a.code));
+      console.log(`Adding ${majors.length} major airport markers`);
 
       if (is3dRef.current) {
         const { Marker3DElement } = await google.maps.importLibrary("maps3d");
         if (cancelled) return;
         for (const apt of majors) {
-          const marker = new Marker3DElement({
-            position: { lat: apt.lat, lng: apt.lng, altitude: 100 },
-            altitudeMode: "RELATIVE_TO_GROUND",
-            collisionBehavior: "REQUIRED",
-            zIndex: 500,
-          });
+          try {
+            const marker = new Marker3DElement({
+              position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
+              altitudeMode: "CLAMP_TO_GROUND",
+              collisionBehavior: "REQUIRED",
+              zIndex: 5000,
+              label: apt.code,
+            });
 
-          const tpl = document.createElement("template");
-          const wrapper = document.createElement("div");
-          wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;";
-          wrapper.innerHTML = `${airportDotSvg(28)}<div style="color:#3bb8e8;font-size:11px;font-weight:700;font-family:-apple-system,sans-serif;text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 12px rgba(59,184,232,0.4);letter-spacing:0.6px;white-space:nowrap;">${apt.code}</div>`;
-          tpl.content.appendChild(wrapper);
-          marker.append(tpl);
-          map.append(marker);
-          airportMarkersRef.current.push(marker);
+            // Custom content: glowing dot + label
+            const tpl = document.createElement("template");
+            const wrapper = document.createElement("div");
+            wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:3px;";
+            wrapper.innerHTML = `${airportDotSvg(36)}<div style="color:#5dd8ff;font-size:13px;font-weight:800;font-family:-apple-system,sans-serif;text-shadow:0 0 8px rgba(0,0,0,1),0 0 16px rgba(59,184,232,0.5);letter-spacing:0.8px;white-space:nowrap;">${apt.code}</div>`;
+            tpl.content.appendChild(wrapper);
+            marker.append(tpl);
+            map.append(marker);
+            airportMarkersRef.current.push(marker);
+          } catch (e) {
+            console.error(`Failed to add airport ${apt.code}:`, e);
+          }
         }
       } else {
         const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
@@ -239,9 +245,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           airportMarkersRef.current.push(m);
         }
       }
-    }, 2000);
+    })();
 
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => { cancelled = true; };
   }, [mapReady, airports]);
 
   /* ══ Flights ══ */
@@ -267,9 +273,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        // Brighter colors to compensate for container brightness filter
-        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,200,60,0.2)" : "rgba(255,200,60,1)";
-        const sz = isSel ? 42 : 32;
+        // Big bold planes like FlightAware — compensate for brightness filter
+        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,210,60,0.2)" : "rgba(255,210,60,1)";
+        const sz = isSel ? 56 : 48;
 
         const mkIcon = () => {
           const tpl = document.createElement("template");
@@ -312,8 +318,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.15)" : "rgba(225,175,55,0.92)";
-        const sz = isSel ? 40 : 30;
+        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,210,60,0.2)" : "rgba(255,210,60,1)";
+        const sz = isSel ? 56 : 48;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel);
@@ -482,7 +488,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.7) saturate(0.85)" }} />
+      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.45) saturate(0.7) contrast(1.15)" }} />
     </>
   );
 }
