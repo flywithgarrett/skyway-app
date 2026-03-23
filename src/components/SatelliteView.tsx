@@ -3,15 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 
 /* ── Types ── */
-interface SatData {
-  name: string;
-  id: number;
-  tle1: string;
-  tle2: string;
-  inclination: number;
-  period: number;
-}
-
 interface SatPosition {
   name: string;
   id: number;
@@ -24,35 +15,6 @@ interface SatPosition {
 }
 
 type SatGroup = "stations" | "starlink";
-
-/* ── SGP4 propagation (dynamic import to handle SSR) ── */
-async function propagateAll(sats: SatData[]): Promise<SatPosition[]> {
-  const sat = await import("satellite.js");
-  const results: SatPosition[] = [];
-  const now = new Date();
-  const gmst = sat.gstime(now);
-
-  for (const s of sats) {
-    try {
-      const satrec = sat.twoline2satrec(s.tle1, s.tle2);
-      if (satrec.error !== 0) continue;
-      const pv = sat.propagate(satrec, now);
-      if (!pv || !pv.position || typeof pv.position === "boolean") continue;
-      const geo = sat.eciToGeodetic(pv.position, gmst);
-      const vel = pv.velocity && typeof pv.velocity !== "boolean"
-        ? Math.sqrt(pv.velocity.x ** 2 + pv.velocity.y ** 2 + pv.velocity.z ** 2)
-        : 0;
-      results.push({
-        name: s.name, id: s.id,
-        lat: sat.degreesLat(geo.latitude),
-        lng: sat.degreesLong(geo.longitude),
-        alt: geo.height, velocity: vel,
-        inclination: s.inclination, period: s.period,
-      });
-    } catch { /* skip bad TLEs */ }
-  }
-  return results;
-}
 
 /* ── Satellite card ── */
 function SatCard({ sat, selected, onClick }: { sat: SatPosition; selected: boolean; onClick: () => void }) {
@@ -94,73 +56,57 @@ function SatCard({ sat, selected, onClick }: { sat: SatPosition; selected: boole
 /* ── Main ── */
 export default function SatelliteView() {
   const [group, setGroup] = useState<SatGroup>("stations");
-  const [sats, setSats] = useState<SatData[]>([]);
   const [positions, setPositions] = useState<SatPosition[]>([]);
   const [selected, setSelected] = useState<SatPosition | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const satsRef = useRef<SatData[]>([]);
   const selectedIdRef = useRef<number | null>(null);
 
-  // Keep refs in sync
-  satsRef.current = sats;
   selectedIdRef.current = selected?.id ?? null;
 
-  // Fetch TLE data
+  // Fetch positions from server (server does SGP4 propagation)
   useEffect(() => {
     setLoading(true);
     setError(null);
     setSelected(null);
     setPositions([]);
 
-    fetch(`/api/satellites?group=${group}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        if (data.satellites && data.satellites.length > 0) {
-          setSats(data.satellites);
-          console.log(`[SkyWay] Loaded ${data.satellites.length} satellites (${data.source})`);
-        } else {
-          setError("No satellite data available");
-        }
-        setLoading(false);
-      })
-      .catch((e) => {
-        console.error("Satellite fetch error:", e);
-        setError("Failed to load satellite data");
-        setLoading(false);
-      });
-  }, [group]);
-
-  // Propagate positions every 2 seconds
-  useEffect(() => {
-    if (sats.length === 0) return;
-
     let mounted = true;
 
-    const update = async () => {
-      try {
-        const results = await propagateAll(satsRef.current);
-        if (!mounted) return;
-        setPositions(results);
-        // Update selected
-        const selId = selectedIdRef.current;
-        if (selId) {
-          const updated = results.find((p) => p.id === selId);
-          if (updated) setSelected(updated);
-        }
-      } catch (e) {
-        console.error("Propagation error:", e);
-      }
+    const fetchPositions = () => {
+      fetch(`/api/satellites?group=${group}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          if (!mounted) return;
+          if (data.positions && data.positions.length > 0) {
+            setPositions(data.positions);
+            // Update selected if tracked
+            const selId = selectedIdRef.current;
+            if (selId) {
+              const updated = data.positions.find((p: SatPosition) => p.id === selId);
+              if (updated) setSelected(updated);
+            }
+          } else {
+            setError("No satellite data available");
+          }
+          setLoading(false);
+        })
+        .catch((e) => {
+          if (!mounted) return;
+          console.error("Satellite fetch error:", e);
+          setError("Failed to load satellite data");
+          setLoading(false);
+        });
     };
 
-    update(); // Initial
-    const interval = setInterval(update, 2000);
+    fetchPositions();
+    const interval = setInterval(fetchPositions, 3000);
     return () => { mounted = false; clearInterval(interval); };
-  }, [sats]);
+  }, [group]);
 
   const filtered = search
     ? positions.filter((s) => s.name.toLowerCase().includes(search.toLowerCase()) || String(s.id).includes(search))
@@ -231,7 +177,7 @@ export default function SatelliteView() {
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
-              {sats.length > 0 ? "Computing positions..." : "No satellites found"}
+              No satellites found
             </div>
           ) : (
             filtered.map((sat) => (
@@ -287,19 +233,19 @@ export default function SatelliteView() {
             {/* Data grid */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[
-                { label: "LATITUDE", value: `${selected.lat.toFixed(4)}°` },
-                { label: "LONGITUDE", value: `${selected.lng.toFixed(4)}°` },
+                { label: "LATITUDE", value: `${selected.lat.toFixed(4)}°`, cyan: false },
+                { label: "LONGITUDE", value: `${selected.lng.toFixed(4)}°`, cyan: false },
                 { label: "ALTITUDE", value: `${selected.alt.toFixed(1)} km`, cyan: true },
                 { label: "VELOCITY", value: `${(selected.velocity * 3600).toFixed(0)} km/h`, cyan: true },
-                { label: "INCLINATION", value: `${selected.inclination.toFixed(1)}°` },
-                { label: "ORBIT PERIOD", value: `${selected.period.toFixed(1)} min` },
+                { label: "INCLINATION", value: `${selected.inclination.toFixed(1)}°`, cyan: false },
+                { label: "ORBIT PERIOD", value: `${selected.period.toFixed(1)} min`, cyan: false },
               ].map((d) => (
                 <div key={d.label} style={{
                   background: "rgba(255,255,255,0.03)", borderRadius: 12, padding: "10px 12px",
                   border: "1px solid rgba(255,255,255,0.04)",
                 }}>
                   <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.12em", marginBottom: 4 }}>{d.label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", color: "cyan" in d ? "#00e5ff" : "rgba(255,255,255,0.7)" }}>{d.value}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", color: d.cyan ? "#00e5ff" : "rgba(255,255,255,0.7)" }}>{d.value}</div>
                 </div>
               ))}
             </div>
