@@ -9,15 +9,15 @@ import Panel from "@/components/Panel";
 import FlightListSidebar from "@/components/FlightListSidebar";
 import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
-import CommunityView from "@/components/CommunityView";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
+import AirportView from "@/components/AirportView";
 import ATCPanel, { ATCAlertBanner } from "@/components/ATCPanel";
 import { useATCFeed } from "@/hooks/useATCFeed";
 import type { ATCAlert } from "@/hooks/useATCFeed";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
-import { Flight } from "@/lib/types";
+import { Flight, Airport } from "@/lib/types";
 
 interface ISSPosition {
   lat: number;
@@ -47,13 +47,18 @@ function useISSPosition(intervalMs = 5000) {
 
 const FlightDetailPanel = dynamic(() => import("@/components/FlightDetailPanel"), { ssr: false });
 
-type Tab = "map" | "flights" | "satellites" | "community" | "alerts";
+type Tab = "map" | "airports" | "flights" | "satellites" | "community" | "alerts";
 
 const placeholders: Record<string, { title: string; icon: string; description: string }> = {
   flights: {
     title: "Flight Board",
     icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 16v-2l-8-5V3.5A1.5 1.5 0 0 0 11.5 2 1.5 1.5 0 0 0 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`,
     description: "Live departure and arrival boards with real-time status updates, gate assignments, and delay tracking.",
+  },
+  community: {
+    title: "Community",
+    icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>`,
+    description: "Connect with fellow aviation enthusiasts, share sightings, and discuss live traffic.",
   },
 };
 
@@ -69,6 +74,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
+  const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
 
   // ATC feed state
   const [atcAirport, setAtcAirport] = useState<string | null>(null);
@@ -90,7 +96,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   // Fetch FlightAware premium data for the selected flight
   const { detail, loading: detailLoading } = useFlightDetails(selectedFlight?.callsign || null);
 
-  // Merge FlightAware premium data into the selected flight for Globe jetstream
+  // Merge FlightAware premium data into the selected flight
   const enrichedSelectedFlight = useMemo(() => {
     if (!selectedFlight) return null;
     if (!detail) return selectedFlight;
@@ -106,22 +112,14 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       progress: detail.progress || selectedFlight.progress,
       routeDistance: detail.routeDistance || selectedFlight.routeDistance,
       origin: detail.origin ? {
-        code: detail.origin.code,
-        icao: detail.origin.icao,
-        name: detail.origin.name,
-        city: detail.origin.city,
-        country: selectedFlight.origin.country,
-        lat: detail.origin.lat,
-        lng: detail.origin.lng,
+        code: detail.origin.code, icao: detail.origin.icao, name: detail.origin.name,
+        city: detail.origin.city, country: selectedFlight.origin.country,
+        lat: detail.origin.lat, lng: detail.origin.lng,
       } : selectedFlight.origin,
       destination: detail.destination ? {
-        code: detail.destination.code,
-        icao: detail.destination.icao,
-        name: detail.destination.name,
-        city: detail.destination.city,
-        country: selectedFlight.destination.country,
-        lat: detail.destination.lat,
-        lng: detail.destination.lng,
+        code: detail.destination.code, icao: detail.destination.icao, name: detail.destination.name,
+        city: detail.destination.city, country: selectedFlight.destination.country,
+        lat: detail.destination.lat, lng: detail.destination.lng,
       } : selectedFlight.destination,
     };
   }, [selectedFlight, detail]);
@@ -134,6 +132,15 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
     }
   };
 
+  const handleSelectAirport = (airport: Airport) => {
+    setFlyToAirport(airport);
+    setActiveTab("map");
+  };
+
+  const handleSearchAirport = (airport: Airport) => {
+    setFlyToAirport(airport);
+    setActiveTab("map");
+  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: "#030610" }}>
@@ -145,35 +152,21 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         issPosition={issPosition}
         flyToISS={flyToISS}
         onFlyToISSComplete={() => setFlyToISS(false)}
+        flyToAirport={flyToAirport}
+        onFlyToAirportComplete={() => setFlyToAirport(null)}
         highlightedCallsign={highlightedCallsign}
         onHighlightComplete={() => setHighlightedCallsign(null)}
       />
 
       {apiError && (
-        <div
-          style={{
-            position: "absolute",
-            top: 16,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 9999,
-            maxWidth: 560,
-            width: "90%",
-            padding: "14px 20px",
-            borderRadius: 10,
-            background: "rgba(20, 8, 8, 0.92)",
-            border: "1px solid rgba(255, 60, 60, 0.35)",
-            backdropFilter: "blur(16px)",
-            color: "#ff6b6b",
-            fontSize: 13,
-            fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-            lineHeight: 1.5,
-            boxShadow: "0 4px 24px rgba(0,0,0,0.5), 0 0 12px rgba(255,60,60,0.08)",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-          }}
-        >
+        <div style={{
+          position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9999, maxWidth: 560, width: "90%", padding: "14px 20px", borderRadius: 10,
+          background: "rgba(20, 8, 8, 0.92)", border: "1px solid rgba(255, 60, 60, 0.35)",
+          backdropFilter: "blur(16px)", color: "#ff6b6b", fontSize: 13,
+          fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace", lineHeight: 1.5,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-start", gap: 10,
+        }}>
           <span style={{ fontSize: 16, lineHeight: "20px", flexShrink: 0 }}>&#9888;</span>
           <span style={{ opacity: 0.95 }}>{apiError}</span>
         </div>
@@ -187,9 +180,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       />
 
       {/* Left sidebar — aviation stats */}
-      {activeTab === "map" && (
-        <FlightListSidebar flights={flights} />
-      )}
+      {activeTab === "map" && <FlightListSidebar flights={flights} />}
 
       {activeTab === "map" && enrichedSelectedFlight && !detailFlight && (
         <Panel
@@ -214,9 +205,17 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         />
       )}
 
-      {activeTab === "satellites" && <SatelliteView />}
+      {/* Airports tab */}
+      {activeTab === "airports" && (
+        <AirportView
+          airports={airports}
+          flights={flights}
+          onSelectAirport={handleSelectAirport}
+          onSelectFlight={(f) => { setSelectedFlight(f); setActiveTab("map"); }}
+        />
+      )}
 
-      {activeTab === "community" && <CommunityView />}
+      {activeTab === "satellites" && <SatelliteView />}
 
       {activeTab === "alerts" && (
         <AlertsView
@@ -234,37 +233,18 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         <button
           onClick={() => setFlyToISS(true)}
           style={{
-            position: "absolute",
-            top: 52,
-            right: 12,
-            zIndex: 50,
-            padding: "6px 10px",
-            cursor: "pointer",
+            position: "absolute", top: 52, right: 12, zIndex: 50,
+            padding: "6px 10px", cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(16px)",
+            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(16px)",
             WebkitBackdropFilter: "blur(16px)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 10,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
+            border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
+            display: "flex", alignItems: "center", gap: 8,
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(0,0,0,0.7)";
-            e.currentTarget.style.borderColor = "rgba(52,211,153,0.25)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(0,0,0,0.55)";
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
-          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.7)"; e.currentTarget.style.borderColor = "rgba(52,211,153,0.25)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.55)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
         >
-          <div style={{
-            width: 6, height: 6, borderRadius: 3,
-            background: "#34d399",
-            boxShadow: "0 0 6px rgba(52,211,153,0.6)",
-            animation: "pulse 2s ease-in-out infinite",
-          }} />
+          <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34d399", boxShadow: "0 0 6px rgba(52,211,153,0.6)", animation: "pulse 2s ease-in-out infinite" }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.1em" }}>ISS</span>
           <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", fontFamily: "'SF Mono', Menlo, monospace" }}>
             {issPosition.lat.toFixed(1)}° {issPosition.lng.toFixed(1)}°
@@ -275,12 +255,9 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         </button>
       )}
 
-      {/* ATC Alert Banner — full-width at top of screen */}
+      {/* ATC Alert Banner */}
       {activeAlertBanner && (
-        <ATCAlertBanner
-          alert={activeAlertBanner}
-          onDismiss={() => setActiveAlertBanner(null)}
-        />
+        <ATCAlertBanner alert={activeAlertBanner} onDismiss={() => setActiveAlertBanner(null)} />
       )}
 
       {/* ATC Panel — right side */}
@@ -301,7 +278,9 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       {searchOpen && (
         <SearchOverlay
           flights={flights}
+          airports={airports}
           onSelect={(flight) => { setSelectedFlight(flight); setActiveTab("map"); }}
+          onSelectAirport={handleSearchAirport}
           onClose={() => setSearchOpen(false)}
         />
       )}

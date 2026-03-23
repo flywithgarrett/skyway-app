@@ -18,6 +18,8 @@ interface MapProps {
   issPosition: ISSPosition | null;
   flyToISS: boolean;
   onFlyToISSComplete: () => void;
+  flyToAirport?: Airport | null;
+  onFlyToAirportComplete?: () => void;
   highlightedCallsign?: string | null;
   onHighlightComplete?: () => void;
 }
@@ -184,7 +186,7 @@ declare const google: any;
 /* ── Default camera: dark globe view centered on US ── */
 const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
 
-export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition, flyToISS, onFlyToISSComplete, highlightedCallsign, onHighlightComplete }: MapProps) {
+export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition, flyToISS, onFlyToISSComplete, flyToAirport, onFlyToAirportComplete, highlightedCallsign, onHighlightComplete }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const is3dRef = useRef(false);
@@ -406,6 +408,30 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     onFlyToISSComplete();
   }, [flyToISS, mapReady, issPosition, onFlyToISSComplete]);
+
+  /* ══ Fly to Airport ══ */
+  useEffect(() => {
+    if (!flyToAirport || !mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (is3dRef.current && map.flyCameraTo) {
+      map.flyCameraTo({
+        endCamera: {
+          center: { lat: flyToAirport.lat, lng: flyToAirport.lng, altitude: 0 },
+          range: 15000,  // Very close zoom to see airport surface
+          tilt: 55,
+          heading: 0,
+        },
+        durationMillis: 2500,
+      });
+    } else if (map.panTo) {
+      map.panTo({ lat: flyToAirport.lat, lng: flyToAirport.lng });
+      if (map.setZoom) map.setZoom(15);
+    }
+
+    onFlyToAirportComplete?.();
+  }, [flyToAirport, mapReady, onFlyToAirportComplete]);
 
   /* ══ Flights ══ */
   const updateFlights = useCallback(async () => {
