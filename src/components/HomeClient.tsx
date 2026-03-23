@@ -72,7 +72,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
 
   // ATC feed state
   const [atcAirport, setAtcAirport] = useState<string | null>(null);
-  const { transcripts: atcTranscripts, alerts: atcAlerts, isConnected: atcConnected } = useATCFeed(atcAirport);
+  const { transcripts: atcTranscripts, alerts: atcAlerts, isConnected: atcConnected, isDemo: atcIsDemo } = useATCFeed(atcAirport);
   const [highlightedCallsign, setHighlightedCallsign] = useState<string | null>(null);
   const [activeAlertBanner, setActiveAlertBanner] = useState<ATCAlert | null>(null);
 
@@ -300,6 +300,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           transcripts={atcTranscripts}
           alerts={atcAlerts}
           isConnected={atcConnected}
+          isDemo={atcIsDemo}
           activeAirport={atcAirport}
           onAirportChange={setAtcAirport}
           onCallsignClick={handleATCCallsignClick}

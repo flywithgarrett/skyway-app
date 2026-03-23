@@ -317,6 +317,7 @@ interface ATCPanelProps {
   transcripts: ATCTranscript[];
   alerts: ATCAlert[];
   isConnected: boolean;
+  isDemo?: boolean;
   activeAirport: string | null;
   onAirportChange: (icao: string) => void;
   onCallsignClick: (callsign: string, lat: number | null, lng: number | null) => void;
@@ -326,6 +327,7 @@ export default function ATCPanel({
   transcripts,
   alerts,
   isConnected,
+  isDemo = false,
   activeAirport,
   onAirportChange,
   onCallsignClick,
@@ -521,9 +523,9 @@ export default function ATCPanel({
               width: 7,
               height: 7,
               borderRadius: 4,
-              background: isConnected ? "#22c55e" : "#6b7280",
-              boxShadow: isConnected ? "0 0 8px rgba(34,197,94,0.6)" : "none",
-              animation: isConnected ? "atcPulseDot 1.2s ease-in-out infinite alternate" : "none",
+              background: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280",
+              boxShadow: isDemo ? "0 0 8px rgba(245,158,11,0.6)" : isConnected ? "0 0 8px rgba(34,197,94,0.6)" : "none",
+              animation: (isConnected || isDemo) ? "atcPulseDot 1.2s ease-in-out infinite alternate" : "none",
             }}
           />
           <span
@@ -677,12 +679,12 @@ export default function ATCPanel({
                     width: 6,
                     height: 6,
                     borderRadius: 3,
-                    background: isConnected ? "#22c55e" : "#6b7280",
-                    boxShadow: isConnected ? "0 0 6px rgba(34,197,94,0.5)" : "none",
+                    background: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280",
+                    boxShadow: isDemo ? "0 0 6px rgba(245,158,11,0.5)" : isConnected ? "0 0 6px rgba(34,197,94,0.5)" : "none",
                   }}
                 />
-                <span style={{ fontSize: 9, color: isConnected ? "#22c55e" : "#6b7280", fontWeight: 600 }}>
-                  {isConnected ? "LIVE" : "OFFLINE"}
+                <span style={{ fontSize: 9, color: isDemo ? "#f59e0b" : isConnected ? "#22c55e" : "#6b7280", fontWeight: 600 }}>
+                  {isDemo ? "DEMO" : isConnected ? "LIVE" : "OFFLINE"}
                 </span>
               </div>
             </div>
