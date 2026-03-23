@@ -10,20 +10,17 @@ interface MapProps {
   onSelectFlight: (flight: Flight | null) => void;
 }
 
-/* ── Major airport IATA codes (get glowing markers) ── */
+/* ── Major airports ── */
 const MAJOR_AIRPORTS = new Set([
   "ATL","LAX","ORD","DFW","DEN","JFK","SFO","SEA","LAS","MCO",
   "EWR","MIA","CLT","PHX","IAH","BOS","MSP","DTW","FLL","PHL",
   "LGA","BWI","SLC","SAN","IAD","DCA","TPA","AUS","HNL","PDX",
   "STL","MCI","BNA","RDU","SMF","CLE","OAK","MKE","SJC","IND",
   "PIT","CVG","CMH","SAT","RSW","SNA","DAL","MDW","HOU","BUR",
-  "YYZ","YVR","YUL","YYC","MEX","CUN","GDL","LHR","CDG","FRA",
-  "AMS","MAD","BCN","FCO","MUC","ZRH","IST","DXB","DOH","SIN",
-  "HKG","NRT","HND","ICN","PEK","PVG","SYD","GRU","EZE","BOG",
-  "SCL","LIM","PTY",
+  "YYZ","YVR","YUL","YYC","MEX","CUN","LHR","CDG","FRA","AMS",
 ]);
 
-/* ── Premium plane SVG ── */
+/* ── Plane SVG ── */
 function planeSvg(color: string, heading: number, size = 32, glow = false): string {
   const glowFilter = glow
     ? `<defs><filter id="g"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="${color}" flood-opacity="0.8"/></filter></defs>`
@@ -41,58 +38,58 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Glowing airport dot SVG ── */
+/* ── Airport dot SVG ── */
 function airportDotSvg(size = 28): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-    <defs>
-      <radialGradient id="ag" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="rgba(59,184,232,0.9)"/>
-        <stop offset="40%" stop-color="rgba(59,184,232,0.5)"/>
-        <stop offset="100%" stop-color="rgba(59,184,232,0)"/>
-      </radialGradient>
-    </defs>
+    <defs><radialGradient id="ag" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(59,184,232,0.9)"/>
+      <stop offset="40%" stop-color="rgba(59,184,232,0.5)"/>
+      <stop offset="100%" stop-color="rgba(59,184,232,0)"/>
+    </radialGradient></defs>
     <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="url(#ag)"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${size * 0.14}" fill="#3bb8e8"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${size * 0.08}" fill="#fff" opacity="0.7"/>
   </svg>`;
 }
 
-/* ── Info popup HTML ── */
+/* ── Flight popup ── */
 function flightPopupHtml(f: Flight): string {
-  const altStr = f.altitude >= 1000
-    ? `FL${Math.round(f.altitude / 100)}`
-    : `${f.altitude.toLocaleString()} ft`;
-  return `
-    <div style="
-      background:rgba(6,12,24,0.92);
-      backdrop-filter:blur(20px) saturate(1.6);
-      -webkit-backdrop-filter:blur(20px) saturate(1.6);
-      border:1px solid rgba(59,184,232,0.25);
-      border-radius:14px;
-      padding:14px 18px;
-      color:#c8dae8;
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-      font-size:12px;
-      line-height:1.6;
-      min-width:200px;
-      box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 40px rgba(59,184,232,0.08);
-    ">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-        <span style="font-weight:700;font-size:16px;color:#00e5ff;letter-spacing:0.8px;">${f.flightNumber}</span>
-        ${f.aircraft ? `<span style="background:rgba(59,184,232,0.15);color:#3bb8e8;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;">${f.aircraft}</span>` : ""}
-      </div>
-      <div style="color:#6d8899;font-size:11px;">${f.airline.name}</div>
-      <div style="margin-top:8px;display:flex;align-items:center;gap:6px;">
-        <span style="color:#fff;font-weight:600;">${f.origin.code}</span>
-        <span style="color:#3bb8e8;">→</span>
-        <span style="color:#fff;font-weight:600;">${f.destination.code}</span>
-      </div>
-      <div style="margin-top:10px;display:flex;gap:16px;color:#4a7090;font-size:10px;font-family:'SF Mono',Menlo,monospace;letter-spacing:0.3px;">
-        <span>${altStr}</span>
-        <span>${f.speed} kts</span>
-        <span>HDG ${f.heading}°</span>
-      </div>
-    </div>`;
+  const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude.toLocaleString()} ft`;
+  return `<div style="background:rgba(6,12,24,0.92);backdrop-filter:blur(20px) saturate(1.6);-webkit-backdrop-filter:blur(20px) saturate(1.6);border:1px solid rgba(59,184,232,0.25);border-radius:14px;padding:14px 18px;color:#c8dae8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;line-height:1.6;min-width:200px;box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 40px rgba(59,184,232,0.08);">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="font-weight:700;font-size:16px;color:#00e5ff;letter-spacing:0.8px;">${f.flightNumber}</span>
+      ${f.aircraft ? `<span style="background:rgba(59,184,232,0.15);color:#3bb8e8;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;">${f.aircraft}</span>` : ""}
+    </div>
+    <div style="color:#6d8899;font-size:11px;">${f.airline.name}</div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px;">
+      <span style="color:#fff;font-weight:600;">${f.origin.code}</span>
+      <span style="color:#3bb8e8;">&rarr;</span>
+      <span style="color:#fff;font-weight:600;">${f.destination.code}</span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:16px;color:#4a7090;font-size:10px;font-family:'SF Mono',Menlo,monospace;letter-spacing:0.3px;">
+      <span>${altStr}</span><span>${f.speed} kts</span><span>HDG ${f.heading}&deg;</span>
+    </div>
+  </div>`;
+}
+
+/* ── Great circle ── */
+function gcPoints(lat1: number, lng1: number, lat2: number, lng2: number, n: number) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const φ1 = toRad(lat1), λ1 = toRad(lng1), φ2 = toRad(lat2), λ2 = toRad(lng2);
+  const d = 2 * Math.asin(Math.sqrt(Math.sin((φ2 - φ1) / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2));
+  if (d < 1e-10) return [{ lat: lat1, lng: lng1 }];
+  const pts: { lat: number; lng: number }[] = [];
+  for (let i = 0; i <= n; i++) {
+    const f = i / n;
+    const a = Math.sin((1 - f) * d) / Math.sin(d);
+    const b = Math.sin(f * d) / Math.sin(d);
+    const x = a * Math.cos(φ1) * Math.cos(λ1) + b * Math.cos(φ2) * Math.cos(λ2);
+    const y = a * Math.cos(φ1) * Math.sin(λ1) + b * Math.cos(φ2) * Math.sin(λ2);
+    const z = a * Math.sin(φ1) + b * Math.sin(φ2);
+    pts.push({ lat: toDeg(Math.atan2(z, Math.sqrt(x * x + y * y))), lng: toDeg(Math.atan2(y, x)) });
+  }
+  return pts;
 }
 
 /* ── Script loader ── */
@@ -105,8 +102,7 @@ function loadGoogleMaps(): Promise<void> {
     (window as any).initMap = () => resolve();
     const s = document.createElement("script");
     s.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=beta&callback=initMap`;
-    s.async = true;
-    s.defer = true;
+    s.async = true; s.defer = true;
     s.onerror = () => reject(new Error("Google Maps script failed"));
     document.head.appendChild(s);
   });
@@ -115,6 +111,9 @@ function loadGoogleMaps(): Promise<void> {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const google: any;
+
+/* ── Default camera: dark globe view centered on US ── */
+const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
 
 export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -128,9 +127,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   onSelectRef.current = onSelectFlight;
   const selectedRef = useRef(selectedFlight);
   selectedRef.current = selectedFlight;
+  const prevCameraRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  /* ── Init ── */
+  /* ══ Init ══ */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -140,11 +140,12 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       try {
         const { Map3DElement } = await google.maps.importLibrary("maps3d");
         const map3d = new Map3DElement({
-          center: { lat: 30, lng: -40, altitude: 0 },
-          range: 25000000,
+          // Start far out for cinematic intro
+          center: { lat: 20, lng: 40, altitude: 0 },
+          range: 40000000,
           tilt: 0,
           heading: 0,
-          mode: "HYBRID",
+          mode: "SATELLITE",  // No labels = cleaner, darker
         });
         map3d.style.width = "100%";
         map3d.style.height = "100%";
@@ -153,13 +154,24 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         mapRef.current = map3d;
         is3dRef.current = true;
         setMapReady(true);
+
+        // Cinematic intro: slow spin to US
+        setTimeout(() => {
+          if (map3d.flyCameraTo) {
+            map3d.flyCameraTo({
+              endCamera: HOME_CAMERA,
+              durationMillis: 4000,
+            });
+          }
+        }, 800);
+
       } catch (err) {
         console.warn("3D failed, using 2D:", err);
         try {
           const { Map: GMap } = await google.maps.importLibrary("maps");
           if (cancelled || !containerRef.current) return;
           const map2d = new GMap(containerRef.current, {
-            center: { lat: 30, lng: -40 }, zoom: 3, mapTypeId: "hybrid",
+            center: { lat: 38, lng: -97 }, zoom: 4, mapTypeId: "hybrid",
             disableDefaultUI: true, zoomControl: true,
           });
           mapRef.current = map2d;
@@ -181,19 +193,19 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     };
   }, []);
 
-  /* ── Airports: glowing dots for major airports ── */
+  /* ══ Airport glowing dots ══ */
   useEffect(() => {
     if (!mapReady || !airports.length) return;
     const map = mapRef.current;
     if (!map) return;
     let cancelled = false;
 
-    (async () => {
+    // Delay airport rendering so map fully settles
+    const timer = setTimeout(async () => {
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
       if (cancelled) return;
 
-      // Only show major airports
       const majors = airports.filter((a) => MAJOR_AIRPORTS.has(a.code));
 
       if (is3dRef.current) {
@@ -201,23 +213,17 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (cancelled) return;
         for (const apt of majors) {
           const marker = new Marker3DElement({
-            position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
-            altitudeMode: "CLAMP_TO_GROUND",
+            position: { lat: apt.lat, lng: apt.lng, altitude: 100 },
+            altitudeMode: "RELATIVE_TO_GROUND",
             collisionBehavior: "REQUIRED",
+            zIndex: 500,
           });
-          // Custom glowing dot + label
-          const tpl = document.createElement("template");
+
+          // Inline SVG + label as slotted content (no template needed for non-interactive)
           const wrapper = document.createElement("div");
-          wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
-          const dot = document.createElement("div");
-          dot.innerHTML = airportDotSvg(24);
-          const label = document.createElement("div");
-          label.textContent = apt.code;
-          label.style.cssText = "color:#3bb8e8;font-size:10px;font-weight:700;font-family:-apple-system,sans-serif;text-shadow:0 0 6px rgba(0,0,0,0.9),0 0 12px rgba(59,184,232,0.3);letter-spacing:0.5px;";
-          wrapper.appendChild(dot);
-          wrapper.appendChild(label);
-          tpl.content.appendChild(wrapper);
-          marker.append(tpl);
+          wrapper.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;";
+          wrapper.innerHTML = `${airportDotSvg(28)}<div style="color:#3bb8e8;font-size:11px;font-weight:700;font-family:-apple-system,sans-serif;text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 12px rgba(59,184,232,0.4);letter-spacing:0.6px;white-space:nowrap;">${apt.code}</div>`;
+          marker.append(wrapper);
           map.append(marker);
           airportMarkersRef.current.push(marker);
         }
@@ -227,16 +233,17 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         for (const apt of majors) {
           const el = document.createElement("div");
           el.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;";
-          el.innerHTML = `${airportDotSvg(24)}<div style="color:#3bb8e8;font-size:10px;font-weight:700;text-shadow:0 0 6px #000;">${apt.code}</div>`;
+          el.innerHTML = `${airportDotSvg(28)}<div style="color:#3bb8e8;font-size:11px;font-weight:700;text-shadow:0 0 6px #000;">${apt.code}</div>`;
           const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: el });
           airportMarkersRef.current.push(m);
         }
       }
-    })();
-    return () => { cancelled = true; };
+    }, 2000);
+
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [mapReady, airports]);
 
-  /* ── Flights ── */
+  /* ══ Flights ══ */
   const updateFlights = useCallback(async () => {
     const map = mapRef.current;
     if (!map) return;
@@ -259,24 +266,22 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.18)" : "rgba(225,175,55,0.92)";
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.15)" : "rgba(225,175,55,0.92)";
         const sz = isSel ? 40 : 30;
-        const glow = isSel;
 
         const mkIcon = () => {
-          const tpl = document.createElement("template");
           const img = document.createElement("img");
-          img.src = planeSvgUrl(color, f.heading, sz, glow);
+          img.src = planeSvgUrl(color, f.heading, sz, isSel);
           img.width = sz;
           img.height = sz;
           img.style.display = "block";
-          tpl.content.appendChild(img);
-          return tpl;
+          return img;
         };
 
         const em = existing.get(f.id);
         if (em) {
           em.position = { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 };
+          // Replace content
           while (em.firstChild) em.removeChild(em.firstChild);
           em.append(mkIcon());
           em.zIndex = isSel ? 9999 : Math.round(f.altitude);
@@ -304,7 +309,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.18)" : "rgba(225,175,55,0.92)";
+        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(225,175,55,0.15)" : "rgba(225,175,55,0.92)";
         const sz = isSel ? 40 : 30;
         const mkEl = () => {
           const div = document.createElement("div");
@@ -340,7 +345,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     updateFlights();
   }, [mapReady, flights, selectedFlight, updateFlights]);
 
-  /* ── Selection: camera fly, jetstream route, info popup ── */
+  /* ══ Selection: save camera → fly to plane → snap back on deselect ══ */
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
@@ -351,42 +356,42 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     routeRef.current = [];
     if (popupRef.current) { try { popupRef.current.remove?.(); popupRef.current.setMap?.(null); } catch {} popupRef.current = null; }
 
-    if (!selectedFlight) return;
+    if (!selectedFlight) {
+      // ── Deselected: snap camera back to saved position ──
+      if (is3dRef.current && prevCameraRef.current && map.flyCameraTo) {
+        map.flyCameraTo({
+          endCamera: prevCameraRef.current,
+          durationMillis: 1500,
+        });
+        prevCameraRef.current = null;
+      }
+      return;
+    }
 
     const { origin, destination } = selectedFlight;
     const hasOrig = origin.lat !== 0 || origin.lng !== 0;
     const hasDest = destination.lat !== 0 || destination.lng !== 0;
 
-    // Build great-circle route points
-    const gcPoints = (lat1: number, lng1: number, lat2: number, lng2: number, n: number) => {
-      const toRad = (d: number) => (d * Math.PI) / 180;
-      const toDeg = (r: number) => (r * 180) / Math.PI;
-      const φ1 = toRad(lat1), λ1 = toRad(lng1), φ2 = toRad(lat2), λ2 = toRad(lng2);
-      const d = 2 * Math.asin(Math.sqrt(Math.sin((φ2 - φ1) / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2));
-      if (d < 1e-10) return [{ lat: lat1, lng: lng1 }];
-      const pts: { lat: number; lng: number }[] = [];
-      for (let i = 0; i <= n; i++) {
-        const f = i / n;
-        const a = Math.sin((1 - f) * d) / Math.sin(d);
-        const b = Math.sin(f * d) / Math.sin(d);
-        const x = a * Math.cos(φ1) * Math.cos(λ1) + b * Math.cos(φ2) * Math.cos(λ2);
-        const y = a * Math.cos(φ1) * Math.sin(λ1) + b * Math.cos(φ2) * Math.sin(λ2);
-        const z = a * Math.sin(φ1) + b * Math.sin(φ2);
-        pts.push({ lat: toDeg(Math.atan2(z, Math.sqrt(x * x + y * y))), lng: toDeg(Math.atan2(y, x)) });
-      }
-      return pts;
-    };
-
     (async () => {
       if (is3dRef.current) {
-        // Fly camera
+        // Save current camera before flying
+        if (!prevCameraRef.current) {
+          prevCameraRef.current = {
+            center: map.center ? { lat: map.center.lat, lng: map.center.lng, altitude: map.center.altitude || 0 } : HOME_CAMERA.center,
+            range: map.range || HOME_CAMERA.range,
+            tilt: map.tilt ?? HOME_CAMERA.tilt,
+            heading: map.heading ?? HOME_CAMERA.heading,
+          };
+        }
+
+        // Fly to aircraft — heading 0 (north-up) so it doesn't twist
         if (map.flyCameraTo) {
           map.flyCameraTo({
             endCamera: {
               center: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 0 },
-              range: 1200000,
-              tilt: 50,
-              heading: selectedFlight.heading,
+              range: 1500000,
+              tilt: 45,
+              heading: 0,  // Always north-up to prevent disorientation
             },
             durationMillis: 2000,
           });
@@ -395,7 +400,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const { Polyline3DElement, Marker3DElement } = await google.maps.importLibrary("maps3d");
         const acAlt = selectedFlight.altitude * 0.3048;
 
-        // Traveled path: origin → aircraft (solid bright line)
+        // Traveled path: origin → aircraft
         if (hasOrig) {
           const pts = gcPoints(origin.lat, origin.lng, selectedFlight.currentLat, selectedFlight.currentLng, 60);
           const coords = pts.map((p, i) => ({
@@ -403,17 +408,22 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             altitude: 1000 + (acAlt - 1000) * (i / pts.length),
           }));
           const traveled = new Polyline3DElement({
-            altitudeMode: "ABSOLUTE",
-            strokeColor: "#00e5ff",
-            strokeWidth: 5,
-            coordinates: coords,
-            drawsOccludedSegments: true,
+            altitudeMode: "ABSOLUTE", strokeColor: "#00e5ff",
+            strokeWidth: 5, coordinates: coords, drawsOccludedSegments: true,
           });
           map.append(traveled);
           routeRef.current.push(traveled);
+
+          // Glow trail
+          const glowTrail = new Polyline3DElement({
+            altitudeMode: "ABSOLUTE", strokeColor: "rgba(0,229,255,0.1)",
+            strokeWidth: 16, coordinates: coords, drawsOccludedSegments: true,
+          });
+          map.append(glowTrail);
+          routeRef.current.push(glowTrail);
         }
 
-        // Remaining path: aircraft → destination (dashed / dimmer)
+        // Remaining path: aircraft → destination
         if (hasDest) {
           const pts = gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destination.lat, destination.lng, 60);
           const coords = pts.map((p, i) => ({
@@ -421,51 +431,26 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             altitude: acAlt + (1000 - acAlt) * (i / pts.length),
           }));
           const remaining = new Polyline3DElement({
-            altitudeMode: "ABSOLUTE",
-            strokeColor: "rgba(59,184,232,0.35)",
-            strokeWidth: 3,
-            coordinates: coords,
-            drawsOccludedSegments: true,
+            altitudeMode: "ABSOLUTE", strokeColor: "rgba(59,184,232,0.3)",
+            strokeWidth: 3, coordinates: coords, drawsOccludedSegments: true,
           });
           map.append(remaining);
           routeRef.current.push(remaining);
         }
 
-        // Glow trail behind aircraft (thicker, lower opacity)
-        if (hasOrig) {
-          const pts = gcPoints(origin.lat, origin.lng, selectedFlight.currentLat, selectedFlight.currentLng, 30);
-          const coords = pts.map((p, i) => ({
-            lat: p.lat, lng: p.lng,
-            altitude: 800 + (acAlt - 800) * (i / pts.length),
-          }));
-          const glowTrail = new Polyline3DElement({
-            altitudeMode: "ABSOLUTE",
-            strokeColor: "rgba(0,229,255,0.12)",
-            strokeWidth: 14,
-            coordinates: coords,
-            drawsOccludedSegments: true,
-          });
-          map.append(glowTrail);
-          routeRef.current.push(glowTrail);
-        }
-
-        // Info popup marker at aircraft position
+        // Info popup
         const popupMarker = new Marker3DElement({
-          position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: acAlt + 8000 },
-          altitudeMode: "ABSOLUTE",
-          collisionBehavior: "REQUIRED",
-          zIndex: 10000,
+          position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: acAlt + 12000 },
+          altitudeMode: "ABSOLUTE", collisionBehavior: "REQUIRED", zIndex: 10000,
         });
-        const tpl = document.createElement("template");
         const div = document.createElement("div");
         div.innerHTML = flightPopupHtml(selectedFlight);
-        tpl.content.appendChild(div);
-        popupMarker.append(tpl);
+        popupMarker.append(div);
         map.append(popupMarker);
         popupRef.current = popupMarker;
 
       } else {
-        // 2D fallback
+        // 2D
         map.panTo({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
         if (map.getZoom() < 5) map.setZoom(5);
 
@@ -473,7 +458,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (hasOrig) allPts.push(...gcPoints(origin.lat, origin.lng, selectedFlight.currentLat, selectedFlight.currentLng, 40));
         allPts.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
         if (hasDest) allPts.push(...gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destination.lat, destination.lng, 40));
-
         if (allPts.length >= 2) {
           const line = new google.maps.Polyline({
             path: allPts, strokeColor: "#00e5ff", strokeWeight: 3,
@@ -481,12 +465,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           });
           routeRef.current.push(line);
         }
-
-        // Info window
         const iw = new google.maps.InfoWindow({
           content: flightPopupHtml(selectedFlight),
           position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng },
-          pixelOffset: new google.maps.Size(0, -20),
         });
         iw.open(map);
         popupRef.current = iw;
@@ -494,5 +475,14 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     })();
   }, [mapReady, selectedFlight]);
 
-  return <div ref={containerRef} className="absolute inset-0 z-0" />;
+  return (
+    <>
+      {/* Dark overlay to darken satellite imagery — pointer-events:none so map stays interactive */}
+      <div className="absolute inset-0 z-[1] pointer-events-none" style={{
+        background: "radial-gradient(ellipse at center, rgba(0,5,15,0.45) 0%, rgba(0,5,15,0.65) 100%)",
+        mixBlendMode: "multiply",
+      }} />
+      <div ref={containerRef} className="absolute inset-0 z-0" />
+    </>
+  );
 }
