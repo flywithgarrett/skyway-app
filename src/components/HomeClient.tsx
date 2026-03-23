@@ -12,6 +12,9 @@ import AlertsView from "@/components/AlertsView";
 import CommunityView from "@/components/CommunityView";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
+import ATCPanel, { ATCAlertBanner } from "@/components/ATCPanel";
+import { useATCFeed } from "@/hooks/useATCFeed";
+import type { ATCAlert } from "@/hooks/useATCFeed";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
 import { Flight } from "@/lib/types";
@@ -66,6 +69,23 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
+
+  // ATC feed state
+  const [atcAirport, setAtcAirport] = useState<string | null>(null);
+  const { transcripts: atcTranscripts, alerts: atcAlerts, isConnected: atcConnected } = useATCFeed(atcAirport);
+  const [highlightedCallsign, setHighlightedCallsign] = useState<string | null>(null);
+  const [activeAlertBanner, setActiveAlertBanner] = useState<ATCAlert | null>(null);
+
+  // Show alert banner when new alert arrives
+  useEffect(() => {
+    if (atcAlerts.length > 0) {
+      setActiveAlertBanner(atcAlerts[0]);
+    }
+  }, [atcAlerts]);
+
+  const handleATCCallsignClick = useCallback((callsign: string, _lat: number | null, _lng: number | null) => {
+    setHighlightedCallsign(callsign);
+  }, []);
 
   // Fetch FlightAware premium data for the selected flight
   const { detail, loading: detailLoading } = useFlightDetails(selectedFlight?.callsign || null);
@@ -125,6 +145,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         issPosition={issPosition}
         flyToISS={flyToISS}
         onFlyToISSComplete={() => setFlyToISS(false)}
+        highlightedCallsign={highlightedCallsign}
+        onHighlightComplete={() => setHighlightedCallsign(null)}
       />
 
       {apiError && (
@@ -262,6 +284,26 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
             <span style={{ fontSize: 9, color: "rgba(251,191,36,0.4)" }}>Click to track</span>
           </div>
         </button>
+      )}
+
+      {/* ATC Alert Banner — full-width at top of screen */}
+      {activeAlertBanner && (
+        <ATCAlertBanner
+          alert={activeAlertBanner}
+          onDismiss={() => setActiveAlertBanner(null)}
+        />
+      )}
+
+      {/* ATC Panel — right side */}
+      {activeTab === "map" && (
+        <ATCPanel
+          transcripts={atcTranscripts}
+          alerts={atcAlerts}
+          isConnected={atcConnected}
+          activeAirport={atcAirport}
+          onAirportChange={setAtcAirport}
+          onCallsignClick={handleATCCallsignClick}
+        />
       )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />

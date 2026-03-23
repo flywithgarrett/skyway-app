@@ -13,6 +13,8 @@ interface MapLoaderProps {
   issPosition: { lat: number; lng: number; alt: number; velocity: number } | null;
   flyToISS: boolean;
   onFlyToISSComplete: () => void;
+  highlightedCallsign?: string | null;
+  onHighlightComplete?: () => void;
 }
 
 export default function MapLoader(props: MapLoaderProps) {

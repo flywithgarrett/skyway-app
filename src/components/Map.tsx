@@ -18,6 +18,8 @@ interface MapProps {
   issPosition: ISSPosition | null;
   flyToISS: boolean;
   onFlyToISSComplete: () => void;
+  highlightedCallsign?: string | null;
+  onHighlightComplete?: () => void;
 }
 
 /* ── Major airports ── */
@@ -182,7 +184,7 @@ declare const google: any;
 /* ── Default camera: dark globe view centered on US ── */
 const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
 
-export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition, flyToISS, onFlyToISSComplete }: MapProps) {
+export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition, flyToISS, onFlyToISSComplete, highlightedCallsign, onHighlightComplete }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const is3dRef = useRef(false);
@@ -714,6 +716,78 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     })();
   }, [mapReady, selectedFlight]);
+
+  /* ══ Callsign highlight: pulse ring + camera pan + label ══ */
+  const highlightRef = useRef<any[]>([]);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Cleanup previous highlights
+    highlightRef.current.forEach((el) => { try { el.remove?.(); el.setMap?.(null); } catch {} });
+    highlightRef.current = [];
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+
+    if (!mapReady || !highlightedCallsign) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    // Find the marker matching this callsign
+    const flight = flights.find(
+      (f) => f.callsign === highlightedCallsign || f.flightNumber === highlightedCallsign
+    );
+    if (!flight) return;
+
+    const marker = markersRef.current.get(flight.id);
+    if (marker) {
+      marker.zIndex = 99999;
+    }
+
+    (async () => {
+      // Pan camera to the aircraft (don't change zoom)
+      if (is3dRef.current && map.flyCameraTo) {
+        map.flyCameraTo({
+          endCamera: {
+            center: { lat: flight.currentLat, lng: flight.currentLng, altitude: 0 },
+            range: map.range || 2000000,
+            tilt: map.tilt ?? 30,
+            heading: map.heading ?? 0,
+          },
+          durationMillis: 1200,
+        });
+      } else if (map.panTo) {
+        map.panTo({ lat: flight.currentLat, lng: flight.currentLng });
+      }
+
+      // Add label above aircraft
+      if (is3dRef.current) {
+        const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+        const altStr = flight.altitude >= 1000
+          ? `FL${Math.round(flight.altitude / 100)}`
+          : `${flight.altitude} ft`;
+        const label = new Marker3DElement({
+          position: { lat: flight.currentLat, lng: flight.currentLng, altitude: flight.altitude * 0.3048 + 3000 },
+          altitudeMode: "ABSOLUTE",
+          collisionBehavior: "REQUIRED",
+          zIndex: 100000,
+          label: `${highlightedCallsign} · ${altStr}`,
+        });
+        map.append(label);
+        highlightRef.current.push(label);
+      }
+    })();
+
+    // Auto-clear after 6 seconds
+    highlightTimerRef.current = setTimeout(() => {
+      highlightRef.current.forEach((el) => { try { el.remove?.(); el.setMap?.(null); } catch {} });
+      highlightRef.current = [];
+      if (marker) marker.zIndex = Math.round(flight.altitude);
+      onHighlightComplete?.();
+    }, 6000);
+
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, [mapReady, highlightedCallsign, flights, onHighlightComplete]);
 
   return (
     <>
