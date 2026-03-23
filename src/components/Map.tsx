@@ -413,9 +413,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (!map) return;
 
     (window as any).__skyway_flights = flights;
-    const airborne = flights.filter((f) => !f.onGround && f.currentLat !== 0 && f.currentLng !== 0);
+    const visible = flights.filter((f) => f.currentLat !== 0 && f.currentLng !== 0);
     const hasSelection = selectedRef.current !== null;
-    const currentIds = new Set(airborne.map((f) => f.id));
+    const currentIds = new Set(visible.map((f) => f.id));
     const existing = markersRef.current;
 
     for (const [id, m] of existing) {
@@ -428,12 +428,13 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (is3dRef.current) {
       const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
 
-      for (const f of airborne) {
+      for (const f of visible) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? 68 : 56;
+        const isGround = f.onGround;
+        const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
+        const sz = isSel ? 68 : isGround ? 36 : 56;
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
-        const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${altStr} · ${f.speed} kts`;
+        const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
 
         const mkIcon = () => {
           const tpl = document.createElement("template");
@@ -476,10 +477,11 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     } else {
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-      for (const f of airborne) {
+      for (const f of visible) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? 68 : 56;
+        const isGround = f.onGround;
+        const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
+        const sz = isSel ? 68 : isGround ? 36 : 56;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel);

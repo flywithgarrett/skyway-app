@@ -2,7 +2,6 @@
 
 import { Flight } from "@/lib/types";
 import { FlightDetail } from "@/lib/api";
-import { fmtAltitude, fmtHeading, fmtSpeed, fmtTime } from "@/lib/format";
 
 interface FlightDetailPanelProps {
   flight: Flight;
@@ -11,49 +10,40 @@ interface FlightDetailPanelProps {
   onShowOnMap?: () => void;
 }
 
-function StatusIndicator({ status }: { status: string }) {
-  const map: Record<string, { label: string; color: string; glow: string }> = {
-    "en-route": { label: "En Route", color: "#34d399", glow: "rgba(52,211,153,0.25)" },
-    landed: { label: "Arrived", color: "#64748b", glow: "none" },
-    scheduled: { label: "Scheduled", color: "#00e5ff", glow: "rgba(0,229,255,0.25)" },
-    taxiing: { label: "Taxiing", color: "#fbbf24", glow: "rgba(251,191,36,0.25)" },
-    unknown: { label: "Tracking", color: "#00e5ff", glow: "rgba(0,229,255,0.25)" },
-  };
-  const s = map[status] || map["unknown"];
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: s.color, boxShadow: `0 0 8px ${s.glow}` }} />
-      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: s.color, textShadow: `0 0 8px ${s.glow}` }}>
-        {s.label}
-      </span>
-    </div>
-  );
+/* ── Time helpers ── */
+function fmtLocalTime(iso: string | null): string {
+  if (!iso) return "--:--";
+  try {
+    const d = new Date(iso);
+    const h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${ampm}`;
+  } catch { return "--:--"; }
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-white/20 mb-3">{children}</div>;
+function fmtDate(iso: string | null): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+  } catch { return ""; }
 }
 
-function DataCell({ label, value, mono, cyan }: { label: string; value: string; mono?: boolean; cyan?: boolean }) {
-  return (
-    <div className="glass-detail rounded-xl px-3 py-2.5">
-      <div className="text-[9px] uppercase tracking-widest text-white/20 mb-1">{label}</div>
-      <div className={`text-[12px] font-semibold ${cyan ? "text-glow-cyan" : "text-white/70"} ${mono ? "font-mono" : ""}`}>{value}</div>
-    </div>
-  );
-}
-
-function Pill({ label, color }: { label: string; color?: string }) {
-  return (
-    <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-medium"
-      style={{
-        background: color ? `${color}10` : "rgba(0,229,255,0.06)",
-        color: color || "rgba(0,229,255,0.6)",
-        border: `1px solid ${color ? `${color}20` : "rgba(0,229,255,0.1)"}`,
-      }}>
-      {label}
-    </span>
-  );
+function computeTimes(flight: Flight) {
+  const dep = flight.actualDep || flight.scheduledDep;
+  const arr = flight.estimatedArr || flight.scheduledArr;
+  if (!dep || !arr) return { remaining: null, elapsed: null, total: null };
+  const depMs = new Date(dep).getTime();
+  const arrMs = new Date(arr).getTime();
+  const nowMs = Date.now();
+  const totalMin = Math.max(0, Math.round((arrMs - depMs) / 60000));
+  const elapsedMin = Math.max(0, Math.round((nowMs - depMs) / 60000));
+  const remainingMin = Math.max(0, totalMin - elapsedMin);
+  const fmt = (m: number) => { const h = Math.floor(m / 60); return h > 0 ? `${h}h ${m % 60}m` : `${m}m`; };
+  return { remaining: fmt(remainingMin), elapsed: fmt(elapsedMin), total: fmt(totalMin) };
 }
 
 function guessWeightClass(ac: string | null): string | null {
@@ -67,20 +57,23 @@ function guessWeightClass(ac: string | null): string | null {
   return "Light";
 }
 
-function computeTimes(flight: Flight) {
-  const dep = flight.actualDep || flight.scheduledDep;
-  const arr = flight.estimatedArr || flight.scheduledArr;
-  if (!dep || !arr) return { elapsed: null, remaining: null, total: null };
-  const depMs = new Date(dep).getTime();
-  const arrMs = new Date(arr).getTime();
-  const nowMs = Date.now();
-  const totalMin = Math.max(0, Math.round((arrMs - depMs) / 60000));
-  const elapsedMin = Math.max(0, Math.round((nowMs - depMs) / 60000));
-  const remainingMin = Math.max(0, totalMin - elapsedMin);
-  const fmt = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
-  return { elapsed: fmt(elapsedMin), remaining: fmt(remainingMin), total: fmt(totalMin) };
+function getTimezoneAbbr(iso: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleTimeString("en-US", { timeZoneName: "short" }).split(" ").pop() || "";
+  } catch { return ""; }
 }
 
+/* ── Status colors ── */
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  "en-route": { label: "En Route", color: "#34d399" },
+  landed: { label: "Arrived", color: "#94a3b8" },
+  scheduled: { label: "Scheduled", color: "#60a5fa" },
+  taxiing: { label: "Taxiing", color: "#fbbf24" },
+  unknown: { label: "Tracking", color: "#94a3b8" },
+};
+
+/* ── Component ── */
 export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap }: FlightDetailPanelProps) {
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
   const progressPercent = Math.round(flight.progress);
@@ -88,223 +81,413 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
   const registration = flight.registration || detail?.registration || null;
   const weightClass = guessWeightClass(aircraft);
   const times = computeTimes(flight);
+  const depTime = flight.actualDep || flight.scheduledDep;
+  const arrTime = flight.estimatedArr || flight.scheduledArr;
+  const statusInfo = STATUS_MAP[flight.status] || STATUS_MAP["unknown"];
+  const dateStr = fmtDate(depTime);
 
   return (
-    <div className="detail-panel-slide fixed top-0 right-0 bottom-0 z-40 w-full sm:w-96 md:w-[420px] flex flex-col">
+    <div className="fixed top-0 right-0 bottom-0 z-40 w-full sm:w-96 md:w-[420px] flex flex-col"
+      style={{
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif",
+        animation: "slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
+      }}>
+      <style>{`
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+      `}</style>
+
+      {/* Background overlay on mobile */}
       <div className="fixed inset-0 z-[-1] sm:hidden" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose} />
 
-      <div className="flex-1 flex flex-col overflow-hidden glass-detail-panel">
-        {/* Header */}
-        <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.04]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-[11px] font-bold tracking-wide"
-                style={{ background: `linear-gradient(135deg, ${flight.airline.color}, ${flight.airline.color}88)`, color: "#fff", boxShadow: `0 4px 12px ${flight.airline.color}30` }}>
-                {flight.airline.code}
-              </div>
-              <div>
-                <div className="text-lg font-bold text-glow-cyan">{flight.flightNumber}</div>
-                <div className="text-[11px] text-white/30">{flight.airline.name}</div>
-              </div>
+      <div className="flex-1 flex flex-col overflow-hidden" style={{
+        background: "rgba(8,8,10,0.94)",
+        backdropFilter: "blur(40px) saturate(1.5)",
+        WebkitBackdropFilter: "blur(40px) saturate(1.5)",
+        borderLeft: "1px solid rgba(255,255,255,0.06)",
+      }}>
+        {/* ── Header ── */}
+        <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid rgba(255,255,255,0.04)", flexShrink: 0 }}>
+          {/* Date + flight number */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {dateStr && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>{dateStr}</span>}
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.15)" }}>·</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{flight.flightNumber}</span>
             </div>
-            <button onClick={onClose} className="p-2 rounded-xl glass-button text-white/30 hover:text-white/60">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <button onClick={onClose} style={{
+              background: "rgba(255,255,255,0.06)", border: "none", width: 30, height: 30,
+              borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "rgba(255,255,255,0.3)",
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
 
-          {/* Status + Pill tags */}
-          <div className="flex items-center justify-between">
-            <StatusIndicator status={flight.status} />
-            <div className="flex flex-wrap gap-1">
-              {registration && <Pill label={registration} />}
-              {aircraft && <Pill label={aircraft} />}
-              {weightClass && <Pill label={weightClass} color={weightClass === "Super" || weightClass === "Heavy" ? "#f97316" : undefined} />}
+          {/* Route title */}
+          {hasRoute && (
+            <div style={{ fontSize: 18, fontWeight: 700, color: "rgba(255,255,255,0.85)", letterSpacing: "-0.02em", marginBottom: 8 }}>
+              {flight.origin.city} to {flight.destination.city}
             </div>
+          )}
+
+          {/* Status + Tags */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "3px 10px", borderRadius: 20,
+              background: `${statusInfo.color}15`, fontSize: 10, fontWeight: 600,
+            }}>
+              <div style={{ width: 5, height: 5, borderRadius: 3, background: statusInfo.color, boxShadow: `0 0 6px ${statusInfo.color}60` }} />
+              <span style={{ color: statusInfo.color }}>{statusInfo.label}</span>
+            </div>
+
+            {/* Airline badge */}
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "3px 10px", borderRadius: 20,
+              background: `${flight.airline.color}15`,
+            }}>
+              <div style={{ width: 12, height: 12, borderRadius: 4, background: flight.airline.color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 6, fontWeight: 800, color: "#fff" }}>{flight.airline.code}</span>
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>{flight.airline.name}</span>
+            </div>
+
+            {aircraft && (
+              <span style={{
+                padding: "3px 8px", borderRadius: 6, fontSize: 10, fontWeight: 500,
+                background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.3)",
+                fontFamily: "'SF Mono', Menlo, monospace",
+              }}>{aircraft}</span>
+            )}
           </div>
+
+          {/* Flight status line */}
+          {flight.status === "en-route" && times.remaining && (
+            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#34d399" }}>
+              Lands in {times.remaining}
+            </div>
+          )}
+          {flight.status === "taxiing" && (
+            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#fbbf24" }}>
+              Taxiing to gate
+            </div>
+          )}
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
+        {/* ── Scrollable Content ── */}
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
 
-          {/* Departure / Arrival Block */}
+          {/* ── Route Timeline — Flighty style ── */}
           {hasRoute && (
-            <section>
-              <SectionLabel>Route</SectionLabel>
-              <div className="flex items-stretch gap-0">
-                {/* Departure */}
-                <div className="flex-1 text-center">
-                  <div className="text-2xl font-bold text-glow-white">{flight.origin.code}</div>
-                  <div className="text-[10px] text-white/25 mt-0.5">{flight.origin.city}</div>
-                  {flight.origin.name && <div className="text-[10px] text-white/15 mt-0.5">{flight.origin.name}</div>}
-                  {detail?.origin?.gate && (
-                    <div className="text-[9px] font-mono text-cyan-400/40 mt-1">
-                      Gate {detail.origin.terminal ? `${detail.origin.terminal}/` : ""}{detail.origin.gate}
-                    </div>
-                  )}
-                  <div className="mt-2 border-t border-white/[0.04] pt-2">
-                    <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Dep</div>
-                    <div className="text-[12px] font-mono text-white/40">{fmtTime(flight.scheduledDep)}</div>
-                    {flight.actualDep && (
-                      <>
-                        <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1.5 mb-0.5">Actual Dep</div>
-                        <div className="text-[15px] font-mono font-semibold text-glow-cyan">{fmtTime(flight.actualDep)}</div>
-                      </>
-                    )}
-                  </div>
+            <div style={{ padding: "24px 20px" }}>
+              {/* Progress bar */}
+              {progressPercent > 0 && (
+                <div style={{ position: "relative", height: 4, borderRadius: 2, background: "rgba(255,255,255,0.04)", marginBottom: 28 }}>
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, bottom: 0,
+                    width: `${progressPercent}%`, borderRadius: 2,
+                    background: "linear-gradient(90deg, #34d399, #22d3ee)",
+                  }} />
+                  <div style={{
+                    position: "absolute", top: "50%", left: `${progressPercent}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: 10, height: 10, borderRadius: 5,
+                    background: "#fff", border: "2.5px solid #34d399",
+                    boxShadow: "0 0 10px rgba(52,211,153,0.5)",
+                  }} />
                 </div>
+              )}
 
-                {/* Progress */}
-                <div className="flex flex-col items-center justify-center px-3 py-4 w-20">
-                  {progressPercent > 0 ? (
-                    <>
-                      <div className="relative h-full w-[2px]">
-                        <div className="absolute inset-0 rounded-full" style={{ background: "rgba(255,255,255,0.04)" }} />
-                        <div className="absolute inset-x-0 top-0 rounded-full"
-                          style={{ background: "linear-gradient(180deg, #3bb8e8, #00e5ff)", height: `${progressPercent}%`, boxShadow: "0 0 8px rgba(0,229,255,0.25)" }} />
-                        <div className="absolute left-1/2 -translate-x-1/2" style={{ top: `${progressPercent}%`, transform: "translate(-50%,-50%)" }}>
-                          <div className="w-3 h-3 rounded-full border border-cyan-400/40 flex items-center justify-center"
-                            style={{ background: "rgba(10,18,32,0.9)", boxShadow: "0 0 8px rgba(0,229,255,0.3)" }}>
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                          </div>
-                        </div>
+              {/* Origin */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 32 }}>
+                {/* Timeline dot */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, width: 16 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 5, background: "#34d399", boxShadow: "0 0 8px rgba(52,211,153,0.4)" }} />
+                  <div style={{ width: 2, flex: 1, background: "rgba(255,255,255,0.06)", marginTop: 4, minHeight: 60 }} />
+                </div>
+                {/* Content */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 32, fontWeight: 700, color: "rgba(255,255,255,0.9)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+                        {flight.origin.code}
                       </div>
-                      <div className="text-[10px] font-mono text-white/25 mt-2">{progressPercent}%</div>
-                    </>
-                  ) : (
-                    <div className="text-white/10">→</div>
-                  )}
-                </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
+                        {flight.origin.name || flight.origin.city}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 22, fontWeight: 600, color: "rgba(255,255,255,0.7)", fontFamily: "'SF Mono', Menlo, monospace", lineHeight: 1 }}>
+                        {fmtLocalTime(depTime)}
+                      </div>
+                      {getTimezoneAbbr(depTime) && (
+                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginTop: 2 }}>{getTimezoneAbbr(depTime)}</div>
+                      )}
+                    </div>
+                  </div>
 
-                {/* Arrival */}
-                <div className="flex-1 text-center">
-                  <div className="text-2xl font-bold text-glow-white">{flight.destination.code}</div>
-                  <div className="text-[10px] text-white/25 mt-0.5">{flight.destination.city}</div>
-                  {flight.destination.name && <div className="text-[10px] text-white/15 mt-0.5">{flight.destination.name}</div>}
-                  {detail?.destination?.gate && (
-                    <div className="text-[9px] font-mono text-cyan-400/40 mt-1">
-                      Gate {detail.destination.terminal ? `${detail.destination.terminal}/` : ""}{detail.destination.gate}
+                  {/* Gate info */}
+                  {detail?.origin && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
+                      {detail.origin.terminal && (
+                        <div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Terminal</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.45)", marginTop: 1 }}>{detail.origin.terminal}</div>
+                        </div>
+                      )}
+                      {detail.origin.gate && (
+                        <div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Gate</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.45)", marginTop: 1 }}>{detail.origin.gate}</div>
+                        </div>
+                      )}
                     </div>
                   )}
-                  <div className="mt-2 border-t border-white/[0.04] pt-2">
-                    <div className="text-[9px] uppercase tracking-widest text-white/15 mb-0.5">Scheduled Arr</div>
-                    <div className="text-[12px] font-mono text-white/40">{fmtTime(flight.scheduledArr)}</div>
-                    {(flight.estimatedArr || flight.actualArr) && (
-                      <>
-                        <div className="text-[9px] uppercase tracking-widest text-white/15 mt-1.5 mb-0.5">
-                          {flight.actualArr ? "Actual Arr" : "Estimated Arr"}
-                        </div>
-                        <div className="text-[15px] font-mono font-semibold text-glow-cyan">
-                          {fmtTime(flight.actualArr || flight.estimatedArr)}
-                        </div>
-                      </>
-                    )}
-                  </div>
+
+                  {/* Scheduled vs Actual */}
+                  {flight.actualDep && flight.scheduledDep && (
+                    <div style={{ marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
+                      Sched. {fmtLocalTime(flight.scheduledDep)}
+                    </div>
+                  )}
                 </div>
               </div>
-            </section>
-          )}
 
-          {/* Flight Time Summary */}
-          {times.elapsed && (
-            <section>
-              <SectionLabel>Flight Time</SectionLabel>
-              <div className="grid grid-cols-3 gap-1.5">
-                <DataCell label="Elapsed" value={times.elapsed || "—"} mono cyan />
-                <DataCell label="Total" value={times.total || "—"} mono />
-                <DataCell label="Remaining" value={times.remaining || "—"} mono cyan />
+              {/* Flight duration in the middle */}
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 32, paddingLeft: 32 }}>
+                <div style={{
+                  fontSize: 11, color: "rgba(255,255,255,0.2)",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  {times.total && <span>Total: {times.total}</span>}
+                  {flight.routeDistance && (
+                    <>
+                      <span style={{ color: "rgba(255,255,255,0.08)" }}>·</span>
+                      <span>{flight.routeDistance.toLocaleString()} nm</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </section>
+
+              {/* Destination */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, width: 16 }}>
+                  <div style={{
+                    width: 10, height: 10, borderRadius: 5,
+                    border: "2px solid rgba(255,255,255,0.15)",
+                    background: flight.status === "landed" ? "#94a3b8" : "transparent",
+                  }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                    <div>
+                      <div style={{ fontSize: 32, fontWeight: 700, color: "rgba(255,255,255,0.9)", letterSpacing: "-0.02em", lineHeight: 1 }}>
+                        {flight.destination.code}
+                      </div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 4 }}>
+                        {flight.destination.name || flight.destination.city}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 22, fontWeight: 600, color: "rgba(255,255,255,0.7)", fontFamily: "'SF Mono', Menlo, monospace", lineHeight: 1 }}>
+                        {fmtLocalTime(arrTime)}
+                      </div>
+                      {getTimezoneAbbr(arrTime) && (
+                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginTop: 2 }}>{getTimezoneAbbr(arrTime)}</div>
+                      )}
+                    </div>
+                  </div>
+                  {detail?.destination && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
+                      {detail.destination.terminal && (
+                        <div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Terminal</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.45)", marginTop: 1 }}>{detail.destination.terminal}</div>
+                        </div>
+                      )}
+                      {detail.destination.gate && (
+                        <div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Gate</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.45)", marginTop: 1 }}>{detail.destination.gate}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {flight.estimatedArr && flight.scheduledArr && (
+                    <div style={{ marginTop: 6, fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
+                      Sched. {fmtLocalTime(flight.scheduledArr)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
-          {/* Show on Map Button */}
+          {/* ── Show on Map ── */}
           {onShowOnMap && (
-            <button
-              onClick={onShowOnMap}
-              className="w-full py-3 rounded-2xl text-sm font-semibold tracking-wide"
-              style={{
-                background: "linear-gradient(135deg, rgba(0,180,216,0.15) 0%, rgba(0,119,182,0.15) 100%)",
-                border: "1px solid rgba(0,229,255,0.2)",
-                color: "#00e5ff",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
+            <div style={{ padding: "0 20px 20px" }}>
+              <button onClick={onShowOnMap} style={{
+                width: "100%", padding: "12px 0", borderRadius: 14, border: "none",
+                cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
+                background: "rgba(52,211,153,0.08)", color: "#34d399",
+                transition: "all 0.2s",
               }}
-            >
-              ✈ Show Route on Map
-            </button>
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.15)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.08)"; }}
+              >
+                Show Route on Map
+              </button>
+            </div>
           )}
 
-          {/* Live Position */}
-          <section>
-            <SectionLabel>Live Position</SectionLabel>
-            <div className="grid grid-cols-2 gap-1.5">
-              <DataCell label="Latitude" value={`${flight.currentLat.toFixed(4)}°`} mono />
-              <DataCell label="Longitude" value={`${flight.currentLng.toFixed(4)}°`} mono />
-              <DataCell label="Altitude" value={fmtAltitude(flight.altitude)} mono />
-              <DataCell label="Ground Speed" value={fmtSpeed(flight.speed)} mono />
-              <DataCell label="Heading" value={fmtHeading(flight.heading)} mono />
-              {flight.verticalRate != null && (
-                <DataCell label="Vert Rate" value={`${flight.verticalRate > 0 ? "+" : ""}${flight.verticalRate} fpm`} mono />
+          {/* ── Live Position ── */}
+          <div style={{ padding: "0 20px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.15)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+              Live Position
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {[
+                { label: "Altitude", value: flight.altitude >= 18000 ? `FL${Math.round(flight.altitude / 100)}` : flight.altitude > 0 ? `${flight.altitude.toLocaleString()} ft` : "---" },
+                { label: "Ground Speed", value: flight.speed > 0 ? `${flight.speed} kts` : "---" },
+                { label: "Heading", value: flight.heading > 0 ? `${Math.round(flight.heading)}°` : "---" },
+                { label: "Coordinates", value: `${flight.currentLat.toFixed(3)}°, ${flight.currentLng.toFixed(3)}°` },
+                ...(flight.verticalRate != null ? [{ label: "Vert Rate", value: `${flight.verticalRate > 0 ? "+" : ""}${flight.verticalRate} fpm` }] : []),
+                ...(flight.squawk ? [{ label: "Squawk", value: flight.squawk }] : []),
+              ].map((item) => (
+                <div key={item.label} style={{
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: 10, padding: "10px 12px",
+                }}>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em", marginBottom: 4 }}>{item.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontFamily: "'SF Mono', Menlo, monospace" }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Aircraft ── */}
+          <div style={{ padding: "0 20px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.15)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+              Aircraft
+            </div>
+            <div style={{
+              display: "flex", gap: 16, padding: "14px 16px",
+              background: "rgba(255,255,255,0.02)", borderRadius: 14,
+            }}>
+              {aircraft && (
+                <div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Type</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{aircraft}</div>
+                </div>
               )}
-              {flight.squawk && (
-                <DataCell label="Squawk" value={flight.squawk} mono cyan={flight.squawk === "7700" || flight.squawk === "7600" || flight.squawk === "7500"} />
+              {registration && (
+                <div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Registration</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.6)", fontFamily: "'SF Mono', Menlo, monospace", marginTop: 2 }}>{registration}</div>
+                </div>
               )}
-              {flight.geoAltitude != null && (
-                <DataCell label="Geo Altitude" value={`${flight.geoAltitude.toLocaleString()} ft`} mono />
+              {weightClass && (
+                <div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.15)", letterSpacing: "0.08em" }}>Class</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{weightClass}</div>
+                </div>
               )}
             </div>
-          </section>
+          </div>
 
-          {/* Aircraft Details */}
-          <section>
-            <SectionLabel>Aircraft</SectionLabel>
-            <div className="grid grid-cols-2 gap-1.5">
-              <DataCell label="Aircraft Type" value={aircraft || "---"} mono />
-              <DataCell label="Registration" value={registration || "---"} mono />
-              <DataCell label="Callsign" value={flight.callsign || "---"} mono />
-              {flight.routeDistance && (
-                <DataCell label="Route Distance" value={`${flight.routeDistance.toLocaleString()} nm`} mono />
-              )}
+          {/* ── Good to Know ── */}
+          {hasRoute && (
+            <div style={{ padding: "0 20px 20px" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.15)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+                Good to Know
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {/* Timezone change */}
+                {(() => {
+                  const origTz = getTimezoneAbbr(depTime);
+                  const destTz = getTimezoneAbbr(arrTime);
+                  if (origTz && destTz && origTz !== destTz) {
+                    return (
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 12,
+                      }}>
+                        <span style={{ fontSize: 16 }}>🕐</span>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+                          Timezone Change: {origTz} → {destTz}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Route distance */}
+                {flight.routeDistance && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 12,
+                  }}>
+                    <span style={{ fontSize: 16 }}>📏</span>
+                    <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+                      Distance: {flight.routeDistance.toLocaleString()} nautical miles
+                    </span>
+                  </div>
+                )}
+
+                {/* Weight class */}
+                {weightClass && (weightClass === "Heavy" || weightClass === "Super") && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 12,
+                  }}>
+                    <span style={{ fontSize: 16 }}>✈️</span>
+                    <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>
+                      {weightClass} aircraft — {aircraft}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-          </section>
+          )}
 
-          {/* Filed Flight Plan */}
+          {/* ── Filed Flight Plan ── */}
           {detail?.waypoints && (
-            <section>
-              <SectionLabel>Filed Flight Plan</SectionLabel>
-              <div className="glass-detail rounded-xl px-3 py-3">
+            <div style={{ padding: "0 20px 20px" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.15)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+                Flight Plan
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 14, padding: "12px 14px" }}>
                 {(detail.filedAirspeed || detail.filedAltitude) && (
-                  <div className="flex gap-3 mb-2">
+                  <div style={{ display: "flex", gap: 16, marginBottom: 8 }}>
                     {detail.filedAltitude && (
-                      <span className="text-[9px] font-mono text-white/30">
-                        Alt: <span className="text-white/50">{fmtAltitude(detail.filedAltitude)}</span>
+                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'SF Mono', Menlo, monospace" }}>
+                        FL{Math.round(detail.filedAltitude / 100)}
                       </span>
                     )}
                     {detail.filedAirspeed && (
-                      <span className="text-[9px] font-mono text-white/30">
-                        Spd: <span className="text-white/50">{detail.filedAirspeed} kts</span>
+                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "'SF Mono', Menlo, monospace" }}>
+                        {detail.filedAirspeed} kts
                       </span>
                     )}
                   </div>
                 )}
-                <div className="text-[10px] font-mono text-white/40 leading-relaxed break-all">
+                <div style={{ fontSize: 10, fontFamily: "'SF Mono', Menlo, monospace", color: "rgba(255,255,255,0.25)", lineHeight: 1.6, wordBreak: "break-all" }}>
                   {detail.waypoints}
                 </div>
               </div>
-            </section>
+            </div>
           )}
 
-          {/* Data source */}
-          <section>
-            <div className="glass-detail rounded-2xl px-4 py-3 text-center">
-              <div className="text-[10px] text-white/15 leading-relaxed">
-                Data provided by FlightAware AeroAPI
-              </div>
+          {/* Footer */}
+          <div style={{ padding: "12px 20px 24px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.1)" }}>
+              Data provided by FlightAware AeroAPI
             </div>
-          </section>
-
-          <div className="h-4" />
+          </div>
         </div>
       </div>
     </div>
