@@ -14,34 +14,29 @@ const Anthropic = require("@anthropic-ai/sdk");
 const NodeCache = require("node-cache");
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   1. CONFIG — Airport feeds (ICAO → Broadcastify Icecast MP3 URL)
+   1. CONFIG — Airport feeds derived from shared atc-airports.json
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const AIRPORT_FEEDS = {
-  KJFK: "https://audio.broadcastify.com/tebmyznqc8audm.mp3",
-  KLAX: "https://audio.broadcastify.com/000000000.mp3",
-  KORD: "https://audio.broadcastify.com/000000001.mp3",
-  KATL: "https://audio.broadcastify.com/000000002.mp3",
-  KDFW: "https://audio.broadcastify.com/000000003.mp3",
-  KDEN: "https://audio.broadcastify.com/000000004.mp3",
-  KSFO: "https://audio.broadcastify.com/000000005.mp3",
-  KBOS: "https://audio.broadcastify.com/000000006.mp3",
-  KMIA: "https://audio.broadcastify.com/000000007.mp3",
-  KEWR: "https://audio.broadcastify.com/000000008.mp3",
-};
+const atcAirportsJson = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "src", "data", "atc-airports.json"), "utf-8")
+);
 
-const AIRPORT_META = {
-  KJFK: { name: "John F. Kennedy Intl", lat: 40.6413, lng: -73.7781 },
-  KLAX: { name: "Los Angeles Intl", lat: 33.9425, lng: -118.4081 },
-  KORD: { name: "Chicago O'Hare Intl", lat: 41.9742, lng: -87.9073 },
-  KATL: { name: "Hartsfield-Jackson Atlanta Intl", lat: 33.6407, lng: -84.4277 },
-  KDFW: { name: "Dallas/Fort Worth Intl", lat: 32.8998, lng: -97.0403 },
-  KDEN: { name: "Denver Intl", lat: 39.8561, lng: -104.6737 },
-  KSFO: { name: "San Francisco Intl", lat: 37.6213, lng: -122.379 },
-  KBOS: { name: "Boston Logan Intl", lat: 42.3656, lng: -71.0096 },
-  KMIA: { name: "Miami Intl", lat: 25.7959, lng: -80.287 },
-  KEWR: { name: "Newark Liberty Intl", lat: 40.6895, lng: -74.1745 },
-};
+// Build AIRPORT_FEEDS: ICAO → Broadcastify stream URL
+const AIRPORT_FEEDS = {};
+for (const airport of atcAirportsJson) {
+  AIRPORT_FEEDS[airport.icao] = `https://audio.broadcastify.com/${airport.broadcastifyFeedId}.mp3`;
+}
+
+// Build AIRPORT_META: ICAO → { name, lat, lng, city }
+const AIRPORT_META = {};
+for (const airport of atcAirportsJson) {
+  AIRPORT_META[airport.icao] = {
+    name: airport.name,
+    city: airport.city,
+    lat: airport.lat,
+    lng: airport.lng,
+  };
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    2. STATE
