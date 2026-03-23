@@ -2,23 +2,24 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ATCTranscript, ATCAlert } from "@/hooks/useATCFeed";
+import atcAirportsJson from "@/data/atc-airports.json";
 
-/* ── ATC airport list + Broadcastify stream URLs ── */
-const ATC_AIRPORTS: { icao: string; name: string; stream: string }[] = [
-  { icao: "KJFK", name: "John F. Kennedy", stream: "https://audio.broadcastify.com/tebmyznqc8audm.mp3" },
-  { icao: "KLAX", name: "Los Angeles", stream: "https://audio.broadcastify.com/000000000.mp3" },
-  { icao: "KORD", name: "Chicago O'Hare", stream: "https://audio.broadcastify.com/000000001.mp3" },
-  { icao: "KATL", name: "Hartsfield-Jackson", stream: "https://audio.broadcastify.com/000000002.mp3" },
-  { icao: "KDFW", name: "Dallas/Fort Worth", stream: "https://audio.broadcastify.com/000000003.mp3" },
-  { icao: "KDEN", name: "Denver", stream: "https://audio.broadcastify.com/000000004.mp3" },
-  { icao: "KSFO", name: "San Francisco", stream: "https://audio.broadcastify.com/000000005.mp3" },
-  { icao: "KBOS", name: "Boston Logan", stream: "https://audio.broadcastify.com/000000006.mp3" },
-  { icao: "KMIA", name: "Miami", stream: "https://audio.broadcastify.com/000000007.mp3" },
-  { icao: "KEWR", name: "Newark Liberty", stream: "https://audio.broadcastify.com/000000008.mp3" },
-];
+/* ── ATC airport list derived from the shared JSON ── */
+interface ATCAirportEntry {
+  icao: string;
+  name: string;
+  city: string;
+  lat: number;
+  lng: number;
+  broadcastifyFeedId: string;
+}
+
+const ATC_AIRPORTS: ATCAirportEntry[] = atcAirportsJson as ATCAirportEntry[];
 
 function getStreamUrl(icao: string): string | null {
-  return ATC_AIRPORTS.find((a) => a.icao === icao)?.stream ?? null;
+  const airport = ATC_AIRPORTS.find((a) => a.icao === icao);
+  if (!airport) return null;
+  return `https://audio.broadcastify.com/${airport.broadcastifyFeedId}.mp3`;
 }
 
 /* ── Alert sound via Web Audio API ── */
@@ -623,7 +624,7 @@ export default function ATCPanel({
                 </option>
                 {ATC_AIRPORTS.map((a) => (
                   <option key={a.icao} value={a.icao} style={{ background: "#111" }}>
-                    {a.icao} — {a.name}
+                    {a.icao} — {a.name} ({a.city})
                   </option>
                 ))}
               </select>
