@@ -30,12 +30,16 @@ let scriptPromise: Promise<void> | null = null;
 function loadGoogleMaps(): Promise<void> {
   if (scriptPromise) return scriptPromise;
   scriptPromise = new Promise((resolve, reject) => {
-    if (typeof google !== "undefined" && google.maps) { resolve(); return; }
+    if (typeof google !== "undefined" && google.maps?.importLibrary) { resolve(); return; }
+
+    // Use Google's recommended inline bootstrap that sets up importLibrary
+    // before the main script loads (required for v=beta / dynamic libraries)
+    (window as any).initMap = () => resolve();
+
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=beta&libraries=maps3d,marker&loading=async`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=beta&callback=initMap`;
     s.async = true;
     s.defer = true;
-    s.onload = () => resolve();
     s.onerror = () => reject(new Error("Google Maps script failed to load"));
     document.head.appendChild(s);
   });
