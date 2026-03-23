@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { Flight, Airport } from "@/lib/types";
 
 interface MapProps {
@@ -13,7 +13,7 @@ interface MapProps {
 }
 
 // Generate a clean plane icon on canvas — FlightAware style
-function createPlaneImage(color: string, size: number): HTMLCanvasElement {
+function createPlaneImage(color: string, size: number): ImageData {
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -25,31 +25,21 @@ function createPlaneImage(color: string, size: number): HTMLCanvasElement {
   const s = size * 0.38;
 
   ctx.beginPath();
-  // Nose
   ctx.moveTo(0, -s * 0.85);
-  // Right fuselage to wing
   ctx.lineTo(s * 0.10, -s * 0.55);
-  // Right wing
   ctx.lineTo(s * 0.75, s * 0.05);
   ctx.lineTo(s * 0.70, s * 0.15);
-  // Back to fuselage
   ctx.lineTo(s * 0.10, -s * 0.05);
-  // Right fuselage aft
   ctx.lineTo(s * 0.08, s * 0.50);
-  // Right tail
   ctx.lineTo(s * 0.32, s * 0.72);
   ctx.lineTo(s * 0.28, s * 0.82);
-  // Tail center
   ctx.lineTo(s * 0.05, s * 0.65);
   ctx.lineTo(0, s * 0.85);
-  // Left tail
   ctx.lineTo(-s * 0.05, s * 0.65);
   ctx.lineTo(-s * 0.28, s * 0.82);
   ctx.lineTo(-s * 0.32, s * 0.72);
   ctx.lineTo(-s * 0.08, s * 0.50);
-  // Left fuselage aft
   ctx.lineTo(-s * 0.10, -s * 0.05);
-  // Left wing
   ctx.lineTo(-s * 0.70, s * 0.15);
   ctx.lineTo(-s * 0.75, s * 0.05);
   ctx.lineTo(-s * 0.10, -s * 0.55);
@@ -58,13 +48,47 @@ function createPlaneImage(color: string, size: number): HTMLCanvasElement {
   ctx.fillStyle = color;
   ctx.fill();
 
-  return canvas;
+  return ctx.getImageData(0, 0, size, size);
 }
+
+// Dark basemap style spec using free CartoDB tiles (no API key needed)
+const DARK_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  name: "SkyWay Dark",
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  sources: {
+    "carto-dark": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; CartoDB &copy; OpenStreetMap contributors",
+      maxzoom: 19,
+    },
+  },
+  layers: [
+    {
+      id: "background",
+      type: "background",
+      paint: { "background-color": "#050d1a" },
+    },
+    {
+      id: "carto-tiles",
+      type: "raster",
+      source: "carto-dark",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
 
 export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
   const selectedRef = useRef(selectedFlight);
@@ -74,55 +98,27 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) {
-      containerRef.current.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:center;height:100%;background:#050d1a;color:#3bb8e8;font-family:sans-serif;padding:2rem;text-align:center;">
-          <div>
-            <p style="font-size:1.1rem;margin-bottom:0.5rem;">Mapbox token required</p>
-            <p style="color:#4a6080;font-size:0.85rem;">Set <code style="color:#3bb8e8;">NEXT_PUBLIC_MAPBOX_TOKEN</code> in your <code style="color:#3bb8e8;">.env.local</code> file</p>
-          </div>
-        </div>`;
-      return;
-    }
-
-    mapboxgl.accessToken = token;
-
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
-      projection: "globe",
+      style: DARK_STYLE,
       center: [-95, 38],
       zoom: 3.2,
       minZoom: 1.5,
       maxZoom: 18,
       attributionControl: false,
-      antialias: true,
     });
 
-    map.on("style.load", () => {
-      // Dark space atmosphere
-      map.setFog({
-        color: "rgb(5, 10, 28)",
-        "high-color": "rgb(20, 40, 80)",
-        "horizon-blend": 0.04,
-        "space-color": "rgb(3, 5, 12)",
-        "star-intensity": 0.85,
-      });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "bottom-right");
 
+    map.on("load", () => {
       // Generate plane icon images
       const planeNormal = createPlaneImage("rgba(225, 175, 55, 0.92)", 64);
       const planeSelected = createPlaneImage("rgba(0, 229, 255, 1.0)", 64);
       const planeDimmed = createPlaneImage("rgba(225, 175, 55, 0.25)", 64);
 
-      const toImageData = (c: HTMLCanvasElement) => {
-        const ctx = c.getContext("2d")!;
-        const d = ctx.getImageData(0, 0, c.width, c.height);
-        return { width: c.width, height: c.height, data: new Uint8Array(d.data.buffer) };
-      };
-      map.addImage("plane-normal", toImageData(planeNormal), { sdf: false });
-      map.addImage("plane-selected", toImageData(planeSelected), { sdf: false });
-      map.addImage("plane-dimmed", toImageData(planeDimmed), { sdf: false });
+      map.addImage("plane-normal", planeNormal, { sdf: false });
+      map.addImage("plane-selected", planeSelected, { sdf: false });
+      map.addImage("plane-dimmed", planeDimmed, { sdf: false });
 
       // --- Airport layers ---
       map.addSource("airports", {
@@ -160,7 +156,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         minzoom: 3,
         layout: {
           "text-field": ["get", "code"],
-          "text-font": ["DIN Pro Bold", "Arial Unicode MS Bold"],
           "text-size": ["interpolate", ["linear"], ["zoom"], 3, 10, 8, 13],
           "text-offset": [0, 1.2],
           "text-anchor": "top",
@@ -219,7 +214,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         filter: ["!", ["==", ["get", "selectState"], "dimmed"]],
         layout: {
           "text-field": ["get", "flightNumber"],
-          "text-font": ["DIN Pro Medium", "Arial Unicode MS Regular"],
           "text-size": 10,
           "text-offset": [0, 1.6],
           "text-anchor": "top",
@@ -298,7 +292,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (!map) return;
 
     const update = () => {
-      const source = map.getSource("airports") as mapboxgl.GeoJSONSource | undefined;
+      const source = map.getSource("airports") as maplibregl.GeoJSONSource | undefined;
       if (!source) return;
       source.setData({
         type: "FeatureCollection",
@@ -311,7 +305,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     };
 
     if (map.isStyleLoaded()) update();
-    else map.on("style.load", update);
+    else map.on("load", update);
   }, [airports]);
 
   // Update flight data
@@ -328,7 +322,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const hasSelection = selectedRef.current !== null;
 
     const update = () => {
-      const source = map.getSource("flights") as mapboxgl.GeoJSONSource | undefined;
+      const source = map.getSource("flights") as maplibregl.GeoJSONSource | undefined;
       if (!source) return;
       source.setData({
         type: "FeatureCollection",
@@ -350,7 +344,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     };
 
     if (map.isStyleLoaded()) update();
-    else map.on("style.load", update);
+    else map.on("load", update);
   }, [flights, selectedFlight]);
 
   // Route line + fly-to for selected flight
@@ -360,7 +354,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     popupRef.current?.remove();
 
-    const source = map.getSource("route") as mapboxgl.GeoJSONSource | undefined;
+    const source = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
     if (!source) return;
 
     if (!selectedFlight) {
@@ -405,7 +399,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     });
 
     // Popup
-    const popup = new mapboxgl.Popup({
+    const popup = new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
       className: "flight-popup",
@@ -416,12 +410,12 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       .setHTML(
         `<div class="popup-inner">
           <div class="popup-flight">${selectedFlight.flightNumber}</div>
-          <div class="popup-airline">${selectedFlight.airline.name}${selectedFlight.aircraft ? " · " + selectedFlight.aircraft : ""}</div>
-          <div class="popup-route">${selectedFlight.origin.code} → ${selectedFlight.destination.code}</div>
+          <div class="popup-airline">${selectedFlight.airline.name}${selectedFlight.aircraft ? " &middot; " + selectedFlight.aircraft : ""}</div>
+          <div class="popup-route">${selectedFlight.origin.code} &rarr; ${selectedFlight.destination.code}</div>
           <div class="popup-details">
             <span>${selectedFlight.altitude.toLocaleString()} ft</span>
             <span>${selectedFlight.speed} kts</span>
-            <span>HDG ${selectedFlight.heading}°</span>
+            <span>HDG ${selectedFlight.heading}&deg;</span>
           </div>
         </div>`
       )
@@ -435,13 +429,13 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (!map) return;
 
     if (map.isStyleLoaded()) updateRoute();
-    else map.on("style.load", updateRoute);
+    else map.on("load", updateRoute);
   }, [updateRoute]);
 
   return (
     <>
       <style>{`
-        .flight-popup .mapboxgl-popup-content {
+        .flight-popup .maplibregl-popup-content {
           background: rgba(8, 16, 32, 0.88) !important;
           backdrop-filter: blur(16px) saturate(1.5) !important;
           -webkit-backdrop-filter: blur(16px) saturate(1.5) !important;
@@ -450,7 +444,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           padding: 0 !important;
           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 229, 255, 0.06) !important;
         }
-        .flight-popup .mapboxgl-popup-tip {
+        .flight-popup .maplibregl-popup-tip {
           border-top-color: rgba(8, 16, 32, 0.88) !important;
         }
         .popup-inner {
