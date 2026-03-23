@@ -217,9 +217,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       if (is3dRef.current) {
         const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+        const { PinElement } = await google.maps.importLibrary("marker");
         if (cancelled) return;
         for (const apt of majors) {
-          // Use only built-in label — no custom template content
           const marker = new Marker3DElement({
             position: { lat: apt.lat, lng: apt.lng, altitude: 0 },
             altitudeMode: "CLAMP_TO_GROUND",
@@ -227,16 +227,28 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             zIndex: 5000,
             label: apt.code,
           });
+          // Green pin like FlightAware
+          const pin = new PinElement({
+            background: "#22c55e",
+            borderColor: "#16a34a",
+            glyphColor: "#ffffff",
+            scale: 1.2,
+          });
+          marker.append(pin);
           map.append(marker);
           airportMarkersRef.current.push(marker);
         }
       } else {
-        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+        const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker");
         if (cancelled) return;
         for (const apt of majors) {
-          const el = document.createElement("div");
-          el.innerHTML = airportMarkerSvg(apt.code);
-          const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: el });
+          const pin = new PinElement({
+            background: "#22c55e",
+            borderColor: "#16a34a",
+            glyphColor: "#ffffff",
+            scale: 1.2,
+          });
+          const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: pin.element });
           airportMarkersRef.current.push(m);
         }
       }
@@ -373,8 +385,30 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     }
 
     const { origin, destination } = selectedFlight;
-    const hasOrig = origin.lat !== 0 || origin.lng !== 0;
-    const hasDest = destination.lat !== 0 || destination.lng !== 0;
+    let hasOrig = origin.lat !== 0 || origin.lng !== 0;
+    let hasDest = destination.lat !== 0 || destination.lng !== 0;
+
+    // If no origin/dest coords, project a line based on heading
+    const projectedOrig = { lat: 0, lng: 0 };
+    const projectedDest = { lat: 0, lng: 0 };
+    if (!hasOrig || !hasDest) {
+      const headRad = (selectedFlight.heading * Math.PI) / 180;
+      const dist = 8; // degrees (~500nm)
+      if (!hasOrig) {
+        projectedOrig.lat = selectedFlight.currentLat - Math.cos(headRad) * dist;
+        projectedOrig.lng = selectedFlight.currentLng - Math.sin(headRad) * dist;
+        hasOrig = true;
+      }
+      if (!hasDest) {
+        projectedDest.lat = selectedFlight.currentLat + Math.cos(headRad) * dist;
+        projectedDest.lng = selectedFlight.currentLng + Math.sin(headRad) * dist;
+        hasDest = true;
+      }
+    }
+    const origLat = origin.lat !== 0 || origin.lng !== 0 ? origin.lat : projectedOrig.lat;
+    const origLng = origin.lat !== 0 || origin.lng !== 0 ? origin.lng : projectedOrig.lng;
+    const destLat = destination.lat !== 0 || destination.lng !== 0 ? destination.lat : projectedDest.lat;
+    const destLng = destination.lat !== 0 || destination.lng !== 0 ? destination.lng : projectedDest.lng;
 
     (async () => {
       if (is3dRef.current) {
@@ -407,7 +441,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
         // Traveled path: origin → aircraft
         if (hasOrig) {
-          const pts = gcPoints(origin.lat, origin.lng, selectedFlight.currentLat, selectedFlight.currentLng, 60);
+          const pts = gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 60);
           const coords = pts.map((p, i) => ({
             lat: p.lat, lng: p.lng,
             altitude: 1000 + (acAlt - 1000) * (i / pts.length),
@@ -430,7 +464,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
         // Remaining path: aircraft → destination
         if (hasDest) {
-          const pts = gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destination.lat, destination.lng, 60);
+          const pts = gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destLat, destLng, 60);
           const coords = pts.map((p, i) => ({
             lat: p.lat, lng: p.lng,
             altitude: acAlt + (1000 - acAlt) * (i / pts.length),
@@ -462,9 +496,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (map.getZoom() < 5) map.setZoom(5);
 
         const allPts: any[] = [];
-        if (hasOrig) allPts.push(...gcPoints(origin.lat, origin.lng, selectedFlight.currentLat, selectedFlight.currentLng, 40));
+        if (hasOrig) allPts.push(...gcPoints(origLat, origLng, selectedFlight.currentLat, selectedFlight.currentLng, 40));
         allPts.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
-        if (hasDest) allPts.push(...gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destination.lat, destination.lng, 40));
+        if (hasDest) allPts.push(...gcPoints(selectedFlight.currentLat, selectedFlight.currentLng, destLat, destLng, 40));
         if (allPts.length >= 2) {
           const line = new google.maps.Polyline({
             path: allPts, strokeColor: "#00e5ff", strokeWeight: 3,
