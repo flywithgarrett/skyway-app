@@ -5,6 +5,11 @@ import type { ATCTranscript, ATCAlert } from "@/hooks/useATCFeed";
 import atcAirportsJson from "@/data/atc-airports.json";
 
 /* ── ATC airport list derived from the shared JSON ── */
+interface ATCFrequency {
+  type: string;
+  mhz: number;
+}
+
 interface ATCAirportEntry {
   icao: string;
   name: string;
@@ -12,6 +17,7 @@ interface ATCAirportEntry {
   lat: number;
   lng: number;
   broadcastifyFeedId: string;
+  frequencies: ATCFrequency[];
 }
 
 const ATC_AIRPORTS: ATCAirportEntry[] = atcAirportsJson as ATCAirportEntry[];
@@ -553,11 +559,25 @@ export default function ATCPanel({
                 <option value="" style={{ background: "#111" }}>Select Airport...</option>
                 {ATC_AIRPORTS.map((a) => (
                   <option key={a.icao} value={a.icao} style={{ background: "#111" }}>
-                    {a.icao} — {a.name} ({a.city})
+                    {a.icao} — {a.city}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Selected airport name */}
+            {selectedAirport && (
+              <div style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,0.3)",
+                marginBottom: 12,
+                marginTop: -8,
+                paddingLeft: 2,
+                fontWeight: 400,
+              }}>
+                {selectedAirport.name}
+              </div>
+            )}
 
             {/* Audio Controls */}
             {activeAirport && (
