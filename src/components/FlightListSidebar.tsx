@@ -1,167 +1,143 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useMemo } from "react";
 import { Flight } from "@/lib/types";
-import { fmtAltitude, fmtSpeed } from "@/lib/format";
 
-interface FlightListSidebarProps {
+interface AviationStatsProps {
   flights: Flight[];
-  selectedFlightId: string | null;
-  onSelectFlight: (flight: Flight) => void;
 }
 
-const ROW_HEIGHT = 68; // px per flight row
-const OVERSCAN = 8;    // extra rows above/below viewport
+export default function FlightListSidebar({ flights }: AviationStatsProps) {
+  const stats = useMemo(() => {
+    const airborne = flights.filter((f) => !f.onGround && f.currentLat !== 0);
+    const onGround = flights.filter((f) => f.onGround);
+    const avgAlt = airborne.length > 0
+      ? Math.round(airborne.reduce((s, f) => s + f.altitude, 0) / airborne.length)
+      : 0;
+    const avgSpeed = airborne.length > 0
+      ? Math.round(airborne.reduce((s, f) => s + f.speed, 0) / airborne.length)
+      : 0;
+    const maxAlt = airborne.length > 0
+      ? Math.max(...airborne.map((f) => f.altitude))
+      : 0;
 
-export default function FlightListSidebar({ flights, selectedFlightId, onSelectFlight }: FlightListSidebarProps) {
-  const [search, setSearch] = useState("");
-  const [collapsed, setCollapsed] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+    // Count unique aircraft types
+    const types = new Set(airborne.map((f) => f.aircraft).filter(Boolean));
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return flights;
-    const q = search.trim().toUpperCase();
-    return flights.filter((f) =>
-      f.callsign.toUpperCase().includes(q) ||
-      f.flightNumber.toUpperCase().includes(q) ||
-      (f.registration && f.registration.toUpperCase().includes(q)) ||
-      f.airline.name.toUpperCase().includes(q)
+    // Count unique airlines
+    const airlines = new Set(airborne.map((f) => f.airline.code).filter((c) => c !== "??"));
+
+    // Squawk 7700/7600/7500 emergencies
+    const emergencies = flights.filter((f) =>
+      f.squawk === "7700" || f.squawk === "7600" || f.squawk === "7500"
     );
-  }, [flights, search]);
 
-  const onScroll = useCallback(() => {
-    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
-  }, []);
+    // Highest flight
+    const highest = airborne.length > 0
+      ? airborne.reduce((a, b) => a.altitude > b.altitude ? a : b)
+      : null;
 
-  // Reset scroll when search changes
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    setScrollTop(0);
-  }, [search]);
+    // Fastest flight
+    const fastest = airborne.length > 0
+      ? airborne.reduce((a, b) => a.speed > b.speed ? a : b)
+      : null;
 
-  if (collapsed) {
-    return (
-      <button
-        onClick={() => setCollapsed(false)}
-        className="absolute top-16 left-3 z-20 w-9 h-9 rounded-xl flex items-center justify-center glass-panel"
-        style={{ backdropFilter: "blur(16px)" }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(0,229,255,0.6)" strokeWidth="2" strokeLinecap="round">
-          <path d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-    );
-  }
-
-  // Virtualization calculations
-  const viewportHeight = scrollRef.current?.clientHeight || 600;
-  const totalHeight = filtered.length * ROW_HEIGHT;
-  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const endIdx = Math.min(filtered.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN);
-  const visibleFlights = filtered.slice(startIdx, endIdx);
+    return { airborne: airborne.length, onGround: onGround.length, avgAlt, avgSpeed, maxAlt, types: types.size, airlines: airlines.size, emergencies: emergencies.length, highest, fastest };
+  }, [flights]);
 
   return (
-    <div className="absolute top-14 left-3 bottom-16 z-20 w-72 flex flex-col pointer-events-auto hidden sm:flex">
-      <div className="flex-1 flex flex-col overflow-hidden glass-panel" style={{ backdropFilter: "blur(16px)" }}>
-        {/* Header */}
-        <div className="shrink-0 px-3 pt-3 pb-2 border-b border-white/[0.04]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[10px] uppercase tracking-[0.15em] font-semibold text-white/25">
-              Flights <span className="text-cyan-400/50">{filtered.length}</span>
-            </div>
-            <button
-              onClick={() => setCollapsed(true)}
-              className="p-1 rounded-lg hover:bg-white/5 text-white/20 hover:text-white/40 transition-colors"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
-          </div>
+    <div className="absolute top-14 left-3 z-20 pointer-events-auto hidden sm:block" style={{ width: 220 }}>
+      <div className="glass-panel" style={{ padding: 0, overflow: "hidden" }}>
 
-          {/* Search bar */}
-          <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(0,229,255,0.3)" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search callsign or tail..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-lg text-[11px] font-mono text-white/70 placeholder:text-white/15 outline-none"
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.05)",
-              }}
-            />
+        {/* Active flights — hero stat */}
+        <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ fontSize: 9, letterSpacing: "0.15em", color: "rgba(255,255,255,0.25)", fontWeight: 600, marginBottom: 4 }}>
+            ACTIVE FLIGHTS
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: "'SF Pro Display', -apple-system, sans-serif", letterSpacing: "-1px" }}>
+              {stats.airborne.toLocaleString()}
+            </span>
+            <span style={{ fontSize: 11, color: "rgba(0,229,255,0.5)", fontFamily: "monospace" }}>
+              airborne
+            </span>
           </div>
         </div>
 
-        {/* Virtualized scrollable flight list */}
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(0,229,255,0.15) transparent" }}
-          onScroll={onScroll}
-        >
-          {filtered.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[10px] text-white/15">
-              {search ? "No matches" : "No flights loaded"}
-            </div>
-          ) : (
-            <div style={{ height: totalHeight, position: "relative" }}>
-              {visibleFlights.map((f, vi) => {
-                const idx = startIdx + vi;
-                const isSelected = f.id === selectedFlightId;
-                return (
-                  <button
-                    key={f.id}
-                    onClick={() => onSelectFlight(f)}
-                    className="absolute left-0 right-0 text-left px-3 py-2 border-b border-white/[0.02]"
-                    style={{
-                      top: idx * ROW_HEIGHT,
-                      height: ROW_HEIGHT,
-                      background: isSelected ? "rgba(0,229,255,0.06)" : "transparent",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = isSelected ? "rgba(0,229,255,0.06)" : "transparent"; }}
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[12px] font-bold font-mono" style={{ color: isSelected ? "#00e5ff" : "rgba(0,229,255,0.7)" }}>
-                        {f.callsign || f.flightNumber}
-                      </span>
-                      <span className="text-[9px] font-mono text-white/25">
-                        {fmtAltitude(f.altitude)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] text-white/30 truncate">{f.airline.name}</span>
-                        {f.aircraft && (
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.35)" }}>
-                            {f.aircraft}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[9px] font-mono text-white/20 shrink-0 ml-2">
-                        {fmtSpeed(f.speed)}
-                      </span>
-                    </div>
-                    {f.origin.code !== "---" && f.destination.code !== "---" && (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className="text-[9px] font-mono text-white/20">{f.origin.code}</span>
-                        <span className="text-[8px] text-white/10">→</span>
-                        <span className="text-[9px] font-mono text-white/20">{f.destination.code}</span>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        {/* Stat grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+          <StatCell label="AVG ALT" value={stats.avgAlt >= 1000 ? `FL${Math.round(stats.avgAlt / 100)}` : `${stats.avgAlt.toLocaleString()} ft`} />
+          <StatCell label="AVG SPD" value={`${stats.avgSpeed} kts`} />
+          <StatCell label="AIRLINES" value={String(stats.airlines)} />
+          <StatCell label="ACFT TYPES" value={String(stats.types)} />
+          <StatCell label="ON GROUND" value={String(stats.onGround)} />
+          <StatCell label="MAX ALT" value={stats.maxAlt >= 1000 ? `FL${Math.round(stats.maxAlt / 100)}` : `${stats.maxAlt.toLocaleString()} ft`} />
         </div>
+
+        {/* Emergency status */}
+        <div style={{
+          padding: "8px 16px",
+          borderTop: "1px solid rgba(255,255,255,0.04)",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: 3,
+            background: stats.emergencies > 0 ? "#ef4444" : "#22c55e",
+            boxShadow: stats.emergencies > 0 ? "0 0 8px rgba(239,68,68,0.6)" : "0 0 6px rgba(34,197,94,0.4)",
+          }} />
+          <span style={{ fontSize: 10, color: stats.emergencies > 0 ? "#ef4444" : "rgba(255,255,255,0.3)", fontWeight: 600, letterSpacing: "0.08em" }}>
+            {stats.emergencies > 0 ? `${stats.emergencies} EMERGENCY` : "NO EMERGENCIES"}
+          </span>
+        </div>
+
+        {/* Notable flights */}
+        {stats.highest && (
+          <div style={{ padding: "6px 16px 10px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+            <div style={{ fontSize: 9, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", fontWeight: 600, marginBottom: 4 }}>
+              HIGHEST
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,229,255,0.7)", fontFamily: "monospace" }}>
+                {stats.highest.callsign || stats.highest.flightNumber}
+              </span>
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: "monospace" }}>
+                FL{Math.round(stats.highest.altitude / 100)}
+              </span>
+            </div>
+            {stats.fastest && stats.fastest.id !== stats.highest.id && (
+              <>
+                <div style={{ fontSize: 9, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", fontWeight: 600, marginBottom: 4, marginTop: 6 }}>
+                  FASTEST
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,229,255,0.7)", fontFamily: "monospace" }}>
+                    {stats.fastest.callsign || stats.fastest.flightNumber}
+                  </span>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: "monospace" }}>
+                    {stats.fastest.speed} kts
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      padding: "8px 16px",
+      borderBottom: "1px solid rgba(255,255,255,0.03)",
+      borderRight: "1px solid rgba(255,255,255,0.03)",
+    }}>
+      <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.18)", fontWeight: 600, marginBottom: 2 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.6)", fontFamily: "monospace" }}>
+        {value}
       </div>
     </div>
   );

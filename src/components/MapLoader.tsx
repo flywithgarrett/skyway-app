@@ -11,6 +11,8 @@ interface MapLoaderProps {
   selectedFlight: Flight | null;
   onSelectFlight: (flight: Flight | null) => void;
   issPosition: { lat: number; lng: number; alt: number; velocity: number } | null;
+  flyToISS: boolean;
+  onFlyToISSComplete: () => void;
 }
 
 export default function MapLoader(props: MapLoaderProps) {

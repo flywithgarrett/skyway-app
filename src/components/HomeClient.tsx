@@ -65,6 +65,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
+  const [flyToISS, setFlyToISS] = useState(false);
 
   // Fetch FlightAware premium data for the selected flight
   const { detail, loading: detailLoading } = useFlightDetails(selectedFlight?.callsign || null);
@@ -113,10 +114,6 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
     }
   };
 
-  const handleSidebarSelect = (flight: Flight) => {
-    setSelectedFlight(flight);
-    setActiveTab("map");
-  };
 
   return (
     <div className="relative w-full h-screen overflow-hidden" style={{ background: "#030610" }}>
@@ -126,6 +123,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         selectedFlight={enrichedSelectedFlight}
         onSelectFlight={setSelectedFlight}
         issPosition={issPosition}
+        flyToISS={flyToISS}
+        onFlyToISSComplete={() => setFlyToISS(false)}
       />
 
       {apiError && (
@@ -165,13 +164,9 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         selectedFlight={enrichedSelectedFlight}
       />
 
-      {/* Left sidebar — flight list */}
+      {/* Left sidebar — aviation stats */}
       {activeTab === "map" && (
-        <FlightListSidebar
-          flights={flights}
-          selectedFlightId={selectedFlight?.id || null}
-          onSelectFlight={handleSidebarSelect}
-        />
+        <FlightListSidebar flights={flights} />
       )}
 
       {activeTab === "map" && enrichedSelectedFlight && !detailFlight && (
@@ -212,51 +207,61 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         <PlaceholderView {...placeholders[activeTab]} />
       )}
 
-      {/* ISS Tracker Widget — always visible on map view */}
+      {/* ISS Tracker — liquid glass, click to zoom */}
       {activeTab === "map" && issPosition && (
-        <div
+        <button
+          onClick={() => setFlyToISS(true)}
+          className="glass-panel"
           style={{
             position: "absolute",
-            bottom: 80,
+            bottom: 76,
             right: 16,
             zIndex: 50,
-            background: "rgba(6, 12, 24, 0.88)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            border: "1px solid rgba(251, 191, 36, 0.2)",
-            borderRadius: 14,
-            padding: "10px 14px",
-            minWidth: 180,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 20px rgba(251,191,36,0.06)",
+            padding: "12px 16px",
+            cursor: "pointer",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+            minWidth: 200,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "rgba(251,191,36,0.25)";
+            e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 20px rgba(251,191,36,0.08)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "";
+            e.currentTarget.style.boxShadow = "";
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <div style={{
-              width: 8, height: 8, borderRadius: 4,
+              width: 7, height: 7, borderRadius: 4,
               background: "#fbbf24",
-              boxShadow: "0 0 8px rgba(251,191,36,0.6)",
-              animation: "pulse 2s infinite",
+              boxShadow: "0 0 8px rgba(251,191,36,0.5)",
             }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", letterSpacing: "0.8px" }}>ISS TRACKER</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "0.12em" }}>ISS LIVE</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" strokeLinecap="round" style={{ marginLeft: "auto" }}>
+              <path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1" />
+            </svg>
           </div>
-          <div style={{ display: "flex", gap: 12, fontSize: 11, fontFamily: "'SF Mono', Menlo, monospace", color: "rgba(255,255,255,0.6)" }}>
+          <div style={{ display: "flex", gap: 16, fontFamily: "'SF Mono', Menlo, monospace" }}>
             <div>
-              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>LAT</div>
-              <div style={{ color: "#fff" }}>{issPosition.lat.toFixed(2)}&deg;</div>
+              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>LAT</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>{issPosition.lat.toFixed(2)}</div>
             </div>
             <div>
-              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>LNG</div>
-              <div style={{ color: "#fff" }}>{issPosition.lng.toFixed(2)}&deg;</div>
+              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>LNG</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>{issPosition.lng.toFixed(2)}</div>
             </div>
             <div>
-              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>ALT</div>
-              <div style={{ color: "#fbbf24" }}>{issPosition.alt.toFixed(0)} km</div>
+              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>ALT</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#fbbf24" }}>{issPosition.alt.toFixed(0)} km</div>
             </div>
           </div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4, fontFamily: "'SF Mono', Menlo, monospace" }}>
-            {(issPosition.velocity * 3600).toFixed(0)} km/h
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginTop: 6, fontFamily: "'SF Mono', Menlo, monospace", display: "flex", alignItems: "center", gap: 6 }}>
+            <span>{(issPosition.velocity * 3600).toFixed(0)} km/h</span>
+            <span style={{ color: "rgba(255,255,255,0.1)" }}>|</span>
+            <span style={{ fontSize: 9, color: "rgba(251,191,36,0.4)" }}>Click to track</span>
           </div>
-        </div>
+        </button>
       )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />

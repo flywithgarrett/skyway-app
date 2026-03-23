@@ -16,6 +16,8 @@ interface MapProps {
   selectedFlight: Flight | null;
   onSelectFlight: (flight: Flight | null) => void;
   issPosition: ISSPosition | null;
+  flyToISS: boolean;
+  onFlyToISSComplete: () => void;
 }
 
 /* ── Major airports ── */
@@ -166,7 +168,7 @@ declare const google: any;
 /* ── Default camera: dark globe view centered on US ── */
 const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
 
-export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition }: MapProps) {
+export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition, flyToISS, onFlyToISSComplete }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const is3dRef = useRef(false);
@@ -364,6 +366,30 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     return () => { cancelled = true; };
   }, [mapReady, issPosition]);
+
+  /* ══ Fly to ISS on click ══ */
+  useEffect(() => {
+    if (!flyToISS || !mapReady || !issPosition) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (is3dRef.current && map.flyCameraTo) {
+      map.flyCameraTo({
+        endCamera: {
+          center: { lat: issPosition.lat, lng: issPosition.lng, altitude: 0 },
+          range: 3000000,
+          tilt: 35,
+          heading: 0,
+        },
+        durationMillis: 2500,
+      });
+    } else if (map.panTo) {
+      map.panTo({ lat: issPosition.lat, lng: issPosition.lng });
+      if (map.setZoom) map.setZoom(4);
+    }
+
+    onFlyToISSComplete();
+  }, [flyToISS, mapReady, issPosition, onFlyToISSComplete]);
 
   /* ══ Flights ══ */
   const updateFlights = useCallback(async () => {

@@ -37,22 +37,60 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 
 export default function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20">
-      <div className="flex items-center justify-around px-2 py-1 glass-bar-bottom">
+    <div className="absolute bottom-0 left-0 right-0 z-20" style={{ padding: "0 12px 8px" }}>
+      <div
+        className="glass-panel"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-around",
+          padding: "6px 8px",
+          borderRadius: 22,
+        }}
+      >
         {tabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`nav-tab flex flex-col items-center gap-0.5 px-5 py-2 rounded-xl ${isActive ? "nav-tab-active" : ""}`}
               style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+                padding: "8px 16px",
+                borderRadius: 16,
+                border: "none",
+                cursor: "pointer",
                 color: isActive ? "#00e5ff" : "rgba(255,255,255,0.25)",
-                filter: isActive ? "drop-shadow(0 0 6px rgba(0, 229, 255, 0.35))" : "none",
+                background: isActive ? "rgba(0,229,255,0.08)" : "transparent",
+                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+                position: "relative",
+                filter: isActive ? "drop-shadow(0 0 8px rgba(0,229,255,0.3))" : "none",
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.background = "transparent";
               }}
             >
+              {isActive && (
+                <div style={{
+                  position: "absolute",
+                  top: 0,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: 20,
+                  height: 2,
+                  borderRadius: 1,
+                  background: "#00e5ff",
+                  boxShadow: "0 0 8px rgba(0,229,255,0.5)",
+                }} />
+              )}
               <div dangerouslySetInnerHTML={{ __html: tab.icon }} />
-              <span className="text-[10px] font-medium tracking-wide">{tab.label}</span>
+              <span style={{ fontSize: 10, fontWeight: isActive ? 600 : 500, letterSpacing: "0.02em" }}>{tab.label}</span>
             </button>
           );
         })}
