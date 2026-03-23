@@ -30,17 +30,16 @@ const MAJOR_AIRPORTS = new Set([
   "YYZ","YVR","YUL","YYC","MEX","CUN","LHR","CDG","FRA","AMS",
 ]);
 
-/* ── Plane SVG — clean white commercial aircraft silhouette ── */
+/* ── Plane SVG — bold white aircraft with strong outline ── */
 function planeSvg(color: string, heading: number, size = 32, glow = false): string {
   const glowFilter = glow
-    ? `<defs><filter id="g"><feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="${color}" flood-opacity="0.9"/></filter></defs>`
-    : `<defs><filter id="s"><feDropShadow dx="0" dy="0" stdDeviation="1.5" flood-color="rgba(0,0,0,0.8)" flood-opacity="0.6"/></filter></defs>`;
+    ? `<defs><filter id="g"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="${color}" flood-opacity="1"/></filter></defs>`
+    : `<defs><filter id="s"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="rgba(0,0,0,1)" flood-opacity="0.9"/></filter></defs>`;
   const filterAttr = glow ? ' filter="url(#g)"' : ' filter="url(#s)"';
-  // Realistic top-down airliner: fuselage + swept wings + horizontal stabilizers
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
     ${glowFilter}
     <g transform="rotate(${heading}, 32, 32)"${filterAttr}>
-      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(0,0,0,0.4)" stroke-width="0.5"/>
+      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(0,0,0,0.7)" stroke-width="1.5"/>
     </g>
   </svg>`;
 }
@@ -49,24 +48,27 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Airport marker SVG — prominent icon with large IATA code ── */
+/* ── Airport marker SVG — large glowing dot with bold IATA code ── */
 function airportMarkerSvg(code: string): string {
-  const w = 100, h = 64, cx = w / 2;
-  // Airport runway icon + bold IATA code below
+  const w = 120, h = 80, cx = w / 2;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
     <defs>
       <radialGradient id="ag_${code}" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="rgba(0,229,255,0.9)"/>
-        <stop offset="40%" stop-color="rgba(0,229,255,0.4)"/>
+        <stop offset="0%" stop-color="rgba(0,229,255,1)"/>
+        <stop offset="30%" stop-color="rgba(0,229,255,0.6)"/>
+        <stop offset="70%" stop-color="rgba(0,229,255,0.15)"/>
         <stop offset="100%" stop-color="rgba(0,229,255,0)"/>
       </radialGradient>
-      <filter id="af_${code}"><feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#00e5ff" flood-opacity="0.7"/></filter>
+      <filter id="af_${code}">
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#000" flood-opacity="0.9"/>
+        <feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#00e5ff" flood-opacity="0.5"/>
+      </filter>
     </defs>
-    <circle cx="${cx}" cy="18" r="18" fill="url(#ag_${code})"/>
-    <circle cx="${cx}" cy="18" r="7" fill="rgba(0,229,255,0.25)" stroke="#00e5ff" stroke-width="1.5"/>
-    <circle cx="${cx}" cy="18" r="3" fill="#00e5ff"/>
-    <circle cx="${cx}" cy="18" r="1.5" fill="#fff"/>
-    <text x="${cx}" y="${h - 4}" text-anchor="middle" font-family="'SF Pro','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="16" font-weight="900" fill="#ffffff" letter-spacing="1.5" filter="url(#af_${code})">${code}</text>
+    <circle cx="${cx}" cy="24" r="24" fill="url(#ag_${code})"/>
+    <circle cx="${cx}" cy="24" r="8" fill="rgba(0,229,255,0.35)" stroke="#00e5ff" stroke-width="2"/>
+    <circle cx="${cx}" cy="24" r="4" fill="#00e5ff"/>
+    <circle cx="${cx}" cy="24" r="2" fill="#fff"/>
+    <text x="${cx}" y="${h - 4}" text-anchor="middle" font-family="'SF Pro Display','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="20" font-weight="900" fill="#ffffff" letter-spacing="2" filter="url(#af_${code})">${code}</text>
   </svg>`;
 }
 
@@ -277,8 +279,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           const tpl = document.createElement("template");
           const img = document.createElement("img");
           img.src = airportMarkerUrl(apt.code);
-          img.width = 100;
-          img.height = 64;
+          img.width = 120;
+          img.height = 80;
           img.style.display = "block";
           img.title = `${apt.code} — ${apt.name}, ${apt.city}`;
           tpl.content.appendChild(img);
@@ -415,7 +417,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
         const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
-        const sz = isSel ? 52 : 38;
+        const sz = isSel ? 60 : 48;
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${altStr} · ${f.speed} kts`;
 
@@ -463,7 +465,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
         const color = isSel ? "#00e5ff" : hasSelection ? "rgba(255,255,255,0.12)" : "#ffffff";
-        const sz = isSel ? 52 : 38;
+        const sz = isSel ? 60 : 48;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel);
@@ -655,7 +657,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.55) saturate(0.65) contrast(1.1)" }} />
+      <div ref={containerRef} className="absolute inset-0 z-0" style={{ filter: "brightness(0.5) saturate(0.6) contrast(1.15)" }} />
     </>
   );
 }
