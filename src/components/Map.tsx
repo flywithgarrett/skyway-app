@@ -3,11 +3,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Flight, Airport } from "@/lib/types";
 
+interface ISSPosition {
+  lat: number;
+  lng: number;
+  alt: number;
+  velocity: number;
+}
+
 interface MapProps {
   flights: Flight[];
   airports: Airport[];
   selectedFlight: Flight | null;
   onSelectFlight: (flight: Flight | null) => void;
+  issPosition: ISSPosition | null;
 }
 
 /* ── Major airports ── */
@@ -62,6 +70,37 @@ function airportMarkerSvg(code: string): string {
 
 function airportMarkerUrl(code: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(airportMarkerSvg(code))}`;
+}
+
+/* ── ISS marker SVG — always visible, distinctive golden icon ── */
+function issMarkerSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+    <defs>
+      <radialGradient id="issg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="rgba(251,191,36,0.8)"/>
+        <stop offset="50%" stop-color="rgba(251,191,36,0.3)"/>
+        <stop offset="100%" stop-color="rgba(251,191,36,0)"/>
+      </radialGradient>
+      <filter id="issf"><feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fbbf24" flood-opacity="0.9"/></filter>
+    </defs>
+    <circle cx="36" cy="36" r="36" fill="url(#issg)"/>
+    <g transform="translate(36,36)" filter="url(#issf)">
+      <!-- Solar panels -->
+      <rect x="-24" y="-3" width="14" height="6" rx="1" fill="#fbbf24" opacity="0.9"/>
+      <rect x="10" y="-3" width="14" height="6" rx="1" fill="#fbbf24" opacity="0.9"/>
+      <!-- Truss -->
+      <rect x="-10" y="-1" width="20" height="2" rx="1" fill="#fff"/>
+      <!-- Core module -->
+      <rect x="-4" y="-6" width="8" height="12" rx="2" fill="#fff"/>
+      <!-- Radiators -->
+      <rect x="-2" y="-10" width="4" height="4" rx="0.5" fill="#fbbf24" opacity="0.7"/>
+      <rect x="-2" y="6" width="4" height="4" rx="0.5" fill="#fbbf24" opacity="0.7"/>
+    </g>
+  </svg>`;
+}
+
+function issMarkerUrl(): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(issMarkerSvg())}`;
 }
 
 /* ── Flight popup ── */
@@ -127,12 +166,13 @@ declare const google: any;
 /* ── Default camera: dark globe view centered on US ── */
 const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
 
-export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight }: MapProps) {
+export default function FlightMap({ flights, airports, selectedFlight, onSelectFlight, issPosition }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const is3dRef = useRef(false);
   const markersRef = useRef<Map<string, any>>(new Map());
   const airportMarkersRef = useRef<any[]>([]);
+  const issMarkerRef = useRef<any>(null);
   const routeRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
   const onSelectRef = useRef(onSelectFlight);
@@ -199,6 +239,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       markersRef.current.clear();
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
+      if (issMarkerRef.current) { try { issMarkerRef.current.remove?.(); issMarkerRef.current.setMap?.(null); } catch {} issMarkerRef.current = null; }
       if (containerRef.current) try { containerRef.current.innerHTML = ""; } catch {}
       mapRef.current = null;
       setMapReady(false);
@@ -258,6 +299,71 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     return () => { cancelled = true; };
   }, [mapReady, airports]);
+
+  /* ══ ISS marker — always visible at all zoom levels ══ */
+  useEffect(() => {
+    if (!mapReady || !issPosition) return;
+    const map = mapRef.current;
+    if (!map) return;
+    let cancelled = false;
+
+    (async () => {
+      if (is3dRef.current) {
+        const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+        if (cancelled) return;
+
+        const mkTpl = () => {
+          const tpl = document.createElement("template");
+          const img = document.createElement("img");
+          img.src = issMarkerUrl();
+          img.width = 72;
+          img.height = 72;
+          img.style.display = "block";
+          img.title = `ISS — ${issPosition.alt.toFixed(0)} km altitude · ${(issPosition.velocity * 3600).toFixed(0)} km/h`;
+          tpl.content.appendChild(img);
+          return tpl;
+        };
+
+        if (issMarkerRef.current) {
+          // Update position
+          issMarkerRef.current.position = { lat: issPosition.lat, lng: issPosition.lng, altitude: 0 };
+          while (issMarkerRef.current.firstChild) issMarkerRef.current.removeChild(issMarkerRef.current.firstChild);
+          issMarkerRef.current.append(mkTpl());
+        } else {
+          const marker = new Marker3DElement({
+            position: { lat: issPosition.lat, lng: issPosition.lng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
+            collisionBehavior: "REQUIRED",
+            zIndex: 99999,
+          });
+          marker.append(mkTpl());
+          map.append(marker);
+          issMarkerRef.current = marker;
+        }
+      } else {
+        // 2D fallback
+        const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+        if (cancelled) return;
+
+        const div = document.createElement("div");
+        div.innerHTML = issMarkerSvg();
+        div.title = `ISS — ${issPosition.alt.toFixed(0)} km altitude`;
+
+        if (issMarkerRef.current) {
+          issMarkerRef.current.position = { lat: issPosition.lat, lng: issPosition.lng };
+          issMarkerRef.current.content = div;
+        } else {
+          const marker = new AdvancedMarkerElement({
+            map, position: { lat: issPosition.lat, lng: issPosition.lng },
+            content: div, zIndex: 99999,
+          });
+          issMarkerRef.current = marker;
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [mapReady, issPosition]);
 
   /* ══ Flights ══ */
   const updateFlights = useCallback(async () => {

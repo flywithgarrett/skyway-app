@@ -10,6 +10,7 @@ interface MapLoaderProps {
   airports: Airport[];
   selectedFlight: Flight | null;
   onSelectFlight: (flight: Flight | null) => void;
+  issPosition: { lat: number; lng: number; alt: number; velocity: number } | null;
 }
 
 export default function MapLoader(props: MapLoaderProps) {

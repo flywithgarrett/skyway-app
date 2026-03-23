@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import MapLoader from "@/components/MapLoader";
 import TopBar from "@/components/TopBar";
@@ -15,6 +15,32 @@ import PlaceholderView from "@/components/PlaceholderView";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
 import { Flight } from "@/lib/types";
+
+interface ISSPosition {
+  lat: number;
+  lng: number;
+  alt: number;
+  velocity: number;
+}
+
+function useISSPosition(intervalMs = 5000) {
+  const [iss, setIss] = useState<ISSPosition | null>(null);
+
+  const fetchISS = useCallback(() => {
+    fetch("/api/iss")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data && data.lat !== undefined) setIss(data); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchISS();
+    const id = setInterval(fetchISS, intervalMs);
+    return () => clearInterval(id);
+  }, [fetchISS, intervalMs]);
+
+  return iss;
+}
 
 const FlightDetailPanel = dynamic(() => import("@/components/FlightDetailPanel"), { ssr: false });
 
@@ -34,6 +60,7 @@ interface HomeClientProps {
 
 export default function HomeClient({ initialFlights }: HomeClientProps) {
   const { flights, error: apiError } = useLiveFlights(60000, initialFlights);
+  const issPosition = useISSPosition(5000);
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -98,6 +125,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         airports={airports}
         selectedFlight={enrichedSelectedFlight}
         onSelectFlight={setSelectedFlight}
+        issPosition={issPosition}
       />
 
       {apiError && (
@@ -182,6 +210,53 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
 
       {activeTab in placeholders && (
         <PlaceholderView {...placeholders[activeTab]} />
+      )}
+
+      {/* ISS Tracker Widget — always visible on map view */}
+      {activeTab === "map" && issPosition && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 80,
+            right: 16,
+            zIndex: 50,
+            background: "rgba(6, 12, 24, 0.88)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(251, 191, 36, 0.2)",
+            borderRadius: 14,
+            padding: "10px 14px",
+            minWidth: 180,
+            boxShadow: "0 4px 20px rgba(0,0,0,0.5), 0 0 20px rgba(251,191,36,0.06)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <div style={{
+              width: 8, height: 8, borderRadius: 4,
+              background: "#fbbf24",
+              boxShadow: "0 0 8px rgba(251,191,36,0.6)",
+              animation: "pulse 2s infinite",
+            }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", letterSpacing: "0.8px" }}>ISS TRACKER</span>
+          </div>
+          <div style={{ display: "flex", gap: 12, fontSize: 11, fontFamily: "'SF Mono', Menlo, monospace", color: "rgba(255,255,255,0.6)" }}>
+            <div>
+              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>LAT</div>
+              <div style={{ color: "#fff" }}>{issPosition.lat.toFixed(2)}&deg;</div>
+            </div>
+            <div>
+              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>LNG</div>
+              <div style={{ color: "#fff" }}>{issPosition.lng.toFixed(2)}&deg;</div>
+            </div>
+            <div>
+              <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em", marginBottom: 1 }}>ALT</div>
+              <div style={{ color: "#fbbf24" }}>{issPosition.alt.toFixed(0)} km</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 4, fontFamily: "'SF Mono', Menlo, monospace" }}>
+            {(issPosition.velocity * 3600).toFixed(0)} km/h
+          </div>
+        </div>
       )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
