@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import type { ATCTranscript, ATCAlert } from "@/hooks/useATCFeed";
 import atcAirportsJson from "@/data/atc-airports.json";
 
@@ -294,6 +294,21 @@ function useWaveformRenderer(
   }, [active, analyser, canvasRef, onRecChange]);
 }
 
+/* ── Highlight search matches in transcript text ── */
+function highlightMatches(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${escaped})`, "gi");
+  const parts = text.split(regex);
+  return parts.map((part, i) =>
+    regex.test(part) ? (
+      <mark key={i} style={{ background: "rgba(250,204,21,0.4)", color: "#fbbf24", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
+    ) : (
+      part
+    )
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Main ATC Panel
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -321,6 +336,7 @@ export default function ATCPanel({
   const [isRec, setIsRec] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [showHint, setShowHint] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
   const prevTranscriptCountRef = useRef(0);
@@ -756,6 +772,36 @@ export default function ATCPanel({
             )}
           </div>
 
+          {/* ── Search bar ── */}
+          {transcripts.length > 0 && (
+            <div style={{ padding: "8px 14px 4px", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search transcripts..."
+                  style={{
+                    flex: 1,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 11,
+                    color: "#fff",
+                    outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                {searchQuery && (
+                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", fontFamily: "'SF Mono', Menlo, monospace", whiteSpace: "nowrap" }}>
+                    {transcripts.filter((t) => t.text.toLowerCase().includes(searchQuery.toLowerCase()) || (t.callsign || "").toLowerCase().includes(searchQuery.toLowerCase())).length} matches
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Transcript feed ── */}
           <div
             ref={scrollRef}
@@ -782,7 +828,13 @@ export default function ATCPanel({
               </div>
             )}
 
-            {transcripts.map((t, i) => {
+            {transcripts
+              .filter((t) => {
+                if (!searchQuery) return true;
+                const q = searchQuery.toLowerCase();
+                return t.text.toLowerCase().includes(q) || (t.callsign || "").toLowerCase().includes(q);
+              })
+              .map((t, i) => {
               const isEmergency = alerts.some(
                 (a) => a.timestamp === t.timestamp && a.icao === t.icao
               );
@@ -844,7 +896,7 @@ export default function ATCPanel({
                         : "rgba(255,255,255,0.8)",
                     }}
                   >
-                    {t.text}
+                    {searchQuery ? highlightMatches(t.text, searchQuery) : t.text}
                   </span>
                 </div>
               );
