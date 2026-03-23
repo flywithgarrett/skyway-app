@@ -29,7 +29,7 @@ function planeSvg(color: string, heading: number, size = 32, glow = false): stri
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
     ${glowFilter}
     <g transform="rotate(${heading}, 32, 32)"${filterAttr}>
-      <path d="M32 4 L35.5 17 L52 33 L50 36.5 L35.5 30 L34.5 48 L41 55 L40 59 L33.5 53 L32 62 L30.5 53 L24 59 L23 55 L29.5 48 L28.5 30 L14 36.5 L12 33 L28.5 17 Z" fill="${color}" stroke="rgba(255,255,255,0.15)" stroke-width="0.5"/>
+      <path d="M32 4 L35.5 17 L52 33 L50 36.5 L35.5 30 L34.5 48 L41 55 L40 59 L33.5 53 L32 62 L30.5 53 L24 59 L23 55 L29.5 48 L28.5 30 L14 36.5 L12 33 L28.5 17 Z" fill="${color}" stroke="rgba(0,0,0,0.3)" stroke-width="0.5"/>
     </g>
   </svg>`;
 }
@@ -280,9 +280,11 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        // Big bold planes like FlightAware — compensate for brightness filter
-        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,210,60,0.2)" : "rgba(255,210,60,1)";
-        const sz = isSel ? 56 : 48;
+        // Warm golden-tan like FlightAware (compensated for 0.45 brightness filter)
+        const color = isSel ? "#33ffff" : hasSelection ? "rgba(220,180,90,0.15)" : "#e8b84a";
+        const sz = isSel ? 52 : 44;
+        const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
+        const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${altStr} · ${f.speed} kts`;
 
         const mkIcon = () => {
           const tpl = document.createElement("template");
@@ -291,20 +293,22 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           img.width = sz;
           img.height = sz;
           img.style.display = "block";
+          img.title = tooltip;
           tpl.content.appendChild(img);
           return tpl;
         };
 
         const em = existing.get(f.id);
         if (em) {
-          em.position = { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 };
+          // Flat on surface — no altitude stacking
+          em.position = { lat: f.currentLat, lng: f.currentLng, altitude: 0 };
           while (em.firstChild) em.removeChild(em.firstChild);
           em.append(mkIcon());
           em.zIndex = isSel ? 9999 : Math.round(f.altitude);
         } else {
           const marker = new Marker3DInteractiveElement({
-            position: { lat: f.currentLat, lng: f.currentLng, altitude: f.altitude * 0.3048 },
-            altitudeMode: "ABSOLUTE",
+            position: { lat: f.currentLat, lng: f.currentLng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
             collisionBehavior: "REQUIRED",
             zIndex: Math.round(f.altitude),
           });
@@ -325,8 +329,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       for (const f of airborne) {
         const isSel = f.id === selectedRef.current?.id;
-        const color = isSel ? "#33ffff" : hasSelection ? "rgba(255,210,60,0.2)" : "rgba(255,210,60,1)";
-        const sz = isSel ? 56 : 48;
+        const color = isSel ? "#33ffff" : hasSelection ? "rgba(220,180,90,0.15)" : "#e8b84a";
+        const sz = isSel ? 52 : 44;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel);
