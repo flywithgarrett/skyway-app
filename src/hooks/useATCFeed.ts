@@ -36,7 +36,7 @@ interface UseATCFeedReturn {
 }
 
 const MAX_TRANSCRIPTS = 100;
-const DEMO_FALLBACK_AFTER = 3; // fall back to demo after N failed WS attempts
+const DEMO_FALLBACK_AFTER = 2; // fall back to demo after N failed WS attempts
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Demo transcript generator — realistic ATC communications per airport
@@ -82,7 +82,6 @@ const DEMO_PHRASES: Record<string, string[]> = {
   ],
 };
 
-// Generic phrases used for airports without specific entries
 const GENERIC_PHRASES = [
   "{cs} Tower, runway {rwy}, cleared for takeoff, wind {wind}",
   "{cs} contact Departure on {freq}, good day",
@@ -114,7 +113,6 @@ function generateDemoTranscript(icao: string): ATCTranscript {
   const phrases = DEMO_PHRASES[icao] || GENERIC_PHRASES;
   let text = randomItem(phrases);
 
-  // Replace placeholders
   text = text.replace(/\{cs\}/g, callsign);
   text = text.replace(/\{rwy\}/g, randomItem(["4 left", "9 right", "22 left", "28 center", "31 right", "36 left"]));
   text = text.replace(/\{wind\}/g, `${Math.floor(Math.random() * 36) * 10} at ${Math.floor(Math.random() * 20) + 5}`);
@@ -162,15 +160,28 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
   const backoffRef = useRef(1000);
   const failCountRef = useRef(0);
   const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isDemoRef = useRef(false);
+  const activeAirportRef = useRef(activeAirport);
+  activeAirportRef.current = activeAirport;
 
-  // ── Demo mode: generate transcripts on an interval ──
+  const stopDemo = useCallback(() => {
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
+    isDemoRef.current = false;
+    setIsDemo(false);
+  }, []);
+
   const startDemo = useCallback((icao: string) => {
+    // Stop any existing demo
     if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
 
+    isDemoRef.current = true;
     setIsDemo(true);
     setIsConnected(true);
 
-    // Generate a few initial transcripts immediately
+    // Generate initial transcripts immediately
     const initial: ATCTranscript[] = [];
     for (let i = 0; i < 4; i++) {
       const t = generateDemoTranscript(icao);
@@ -178,8 +189,9 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
       initial.push(t);
     }
     setTranscripts(initial.reverse());
+    if (initial[0]?.callsign) setActiveCallsign(initial[0].callsign);
 
-    // Then add a new one every 3–7 seconds
+    // Add a new transcript every 3-7 seconds
     demoIntervalRef.current = setInterval(() => {
       const t = generateDemoTranscript(icao);
       setTranscripts((prev) => {
@@ -190,17 +202,9 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
     }, 3000 + Math.random() * 4000);
   }, []);
 
-  const stopDemo = useCallback(() => {
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-      demoIntervalRef.current = null;
-    }
-    setIsDemo(false);
-  }, []);
-
   const connect = useCallback(() => {
     // Don't try WS if already in demo mode
-    if (isDemo) return;
+    if (isDemoRef.current) return;
 
     // Clean up existing connection
     if (wsRef.current) {
@@ -214,21 +218,20 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
 
       ws.onopen = () => {
         setIsConnected(true);
-        setIsDemo(false);
+        stopDemo();
         failCountRef.current = 0;
         backoffRef.current = 1000;
 
-        // Subscribe to active airport on connect
-        if (activeAirport) {
-          ws.send(JSON.stringify({ subscribe: activeAirport }));
-          subscribedRef.current = activeAirport;
+        const airport = activeAirportRef.current;
+        if (airport) {
+          ws.send(JSON.stringify({ subscribe: airport }));
+          subscribedRef.current = airport;
         }
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-
           if (data.type === "transcript") {
             const t = data as ATCTranscript;
             setTranscripts((prev) => {
@@ -237,7 +240,6 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
             });
             if (t.callsign) setActiveCallsign(t.callsign);
           }
-
           if (data.type === "alert") {
             setAlerts((prev) => [data as ATCAlert, ...prev].slice(0, 50));
           }
@@ -249,43 +251,65 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
         wsRef.current = null;
         failCountRef.current++;
 
-        // After N failures, fall back to demo mode if an airport is selected
-        if (failCountRef.current >= DEMO_FALLBACK_AFTER && activeAirport) {
-          startDemo(activeAirport);
+        const airport = activeAirportRef.current;
+        if (failCountRef.current >= DEMO_FALLBACK_AFTER && airport) {
+          startDemo(airport);
           return;
         }
 
-        // Auto-reconnect with backoff
         const delay = Math.min(backoffRef.current, 15000);
         backoffRef.current = Math.min(backoffRef.current * 2, 15000);
         reconnectTimer.current = setTimeout(connect, delay);
       };
 
       ws.onerror = () => {
-        // onclose will fire after onerror, triggering reconnect
+        // onclose will fire after onerror
       };
     } catch {
       failCountRef.current++;
 
-      if (failCountRef.current >= DEMO_FALLBACK_AFTER && activeAirport) {
-        startDemo(activeAirport);
+      const airport = activeAirportRef.current;
+      if (failCountRef.current >= DEMO_FALLBACK_AFTER && airport) {
+        startDemo(airport);
         return;
       }
 
-      // Schedule reconnect
       const delay = Math.min(backoffRef.current, 15000);
       backoffRef.current = Math.min(backoffRef.current * 2, 15000);
       reconnectTimer.current = setTimeout(connect, delay);
     }
-  }, [activeAirport, isDemo, startDemo]);
+  }, [startDemo, stopDemo]);
 
-  // Connect on mount
+  // Connect when airport changes
   useEffect(() => {
-    if (activeAirport) {
-      failCountRef.current = 0;
+    if (!activeAirport) {
+      // No airport selected — clean everything up
       stopDemo();
-      connect();
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
+      setTranscripts([]);
+      setActiveCallsign(null);
+      setIsConnected(false);
+      return;
     }
+
+    // Airport selected — reset and connect
+    failCountRef.current = 0;
+    backoffRef.current = 1000;
+    stopDemo();
+    if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+    if (wsRef.current) {
+      try { wsRef.current.close(); } catch {}
+      wsRef.current = null;
+    }
+    setTranscripts([]);
+    setActiveCallsign(null);
+
+    connect();
+
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
@@ -295,37 +319,6 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
       stopDemo();
     };
   }, [activeAirport, connect, stopDemo]);
-
-  // Resubscribe when activeAirport changes (without reconnecting)
-  useEffect(() => {
-    // If in demo mode, restart demo for the new airport
-    if (isDemo && activeAirport) {
-      setTranscripts([]);
-      setActiveCallsign(null);
-      startDemo(activeAirport);
-      return;
-    }
-
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    // Unsubscribe from old airport
-    if (subscribedRef.current && subscribedRef.current !== activeAirport) {
-      ws.send(JSON.stringify({ unsubscribe: subscribedRef.current }));
-    }
-
-    // Subscribe to new airport
-    if (activeAirport) {
-      ws.send(JSON.stringify({ subscribe: activeAirport }));
-      subscribedRef.current = activeAirport;
-    } else {
-      subscribedRef.current = null;
-    }
-
-    // Clear transcripts when switching airports
-    setTranscripts([]);
-    setActiveCallsign(null);
-  }, [activeAirport, isDemo, startDemo]);
 
   return { transcripts, alerts, activeCallsign, isConnected, isDemo };
 }

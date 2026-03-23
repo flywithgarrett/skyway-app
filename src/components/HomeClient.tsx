@@ -229,60 +229,49 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         <PlaceholderView {...placeholders[activeTab]} />
       )}
 
-      {/* ISS Tracker — liquid glass, click to zoom */}
+      {/* ISS Tracker — compact pill, top-right corner */}
       {activeTab === "map" && issPosition && (
         <button
           onClick={() => setFlyToISS(true)}
-          className="glass-panel"
           style={{
             position: "absolute",
-            bottom: 76,
-            right: 16,
+            top: 52,
+            right: 12,
             zIndex: 50,
-            padding: "12px 16px",
+            padding: "6px 10px",
             cursor: "pointer",
             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            minWidth: 200,
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "rgba(251,191,36,0.25)";
-            e.currentTarget.style.boxShadow = "0 8px 40px rgba(0,0,0,0.5), 0 0 20px rgba(251,191,36,0.08)";
+            e.currentTarget.style.background = "rgba(0,0,0,0.7)";
+            e.currentTarget.style.borderColor = "rgba(52,211,153,0.25)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = "";
-            e.currentTarget.style.boxShadow = "";
+            e.currentTarget.style.background = "rgba(0,0,0,0.55)";
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <div style={{
-              width: 7, height: 7, borderRadius: 4,
-              background: "#fbbf24",
-              boxShadow: "0 0 8px rgba(251,191,36,0.5)",
-            }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "0.12em" }}>ISS LIVE</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" strokeLinecap="round" style={{ marginLeft: "auto" }}>
-              <path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1" />
-            </svg>
-          </div>
-          <div style={{ display: "flex", gap: 16, fontFamily: "'SF Mono', Menlo, monospace" }}>
-            <div>
-              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>LAT</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>{issPosition.lat.toFixed(2)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>LNG</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>{issPosition.lng.toFixed(2)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 8, letterSpacing: "0.12em", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>ALT</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#fbbf24" }}>{issPosition.alt.toFixed(0)} km</div>
-            </div>
-          </div>
-          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginTop: 6, fontFamily: "'SF Mono', Menlo, monospace", display: "flex", alignItems: "center", gap: 6 }}>
-            <span>{(issPosition.velocity * 3600).toFixed(0)} km/h</span>
-            <span style={{ color: "rgba(255,255,255,0.1)" }}>|</span>
-            <span style={{ fontSize: 9, color: "rgba(251,191,36,0.4)" }}>Click to track</span>
-          </div>
+          <div style={{
+            width: 6, height: 6, borderRadius: 3,
+            background: "#34d399",
+            boxShadow: "0 0 6px rgba(52,211,153,0.6)",
+            animation: "pulse 2s ease-in-out infinite",
+          }} />
+          <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.1em" }}>ISS</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", fontFamily: "'SF Mono', Menlo, monospace" }}>
+            {issPosition.lat.toFixed(1)}° {issPosition.lng.toFixed(1)}°
+          </span>
+          <span style={{ fontSize: 9, color: "rgba(52,211,153,0.6)", fontFamily: "'SF Mono', Menlo, monospace" }}>
+            {issPosition.alt.toFixed(0)}km
+          </span>
         </button>
       )}
 

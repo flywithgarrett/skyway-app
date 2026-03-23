@@ -16,13 +16,17 @@ export default function TopBar({ totalFlights, enRouteCount, onSearchOpen, selec
   return (
     <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
       <div className="flex items-center gap-3 px-4 py-2.5 pointer-events-auto glass-bar">
-        {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Logo — click to refresh */}
+        <button
+          onClick={() => window.location.reload()}
+          className="flex items-center gap-2 shrink-0 cursor-pointer"
+          style={{ background: "none", border: "none", padding: 0 }}
+        >
           <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
           <span className="text-[15px] font-bold tracking-wider text-glow-white">
             Sky<span className="text-glow-cyan">Way</span>
           </span>
-        </div>
+        </button>
 
         {/* Search bar */}
         <button
