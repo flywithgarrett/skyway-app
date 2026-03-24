@@ -191,35 +191,29 @@ function gcPoints(lat1: number, lng1: number, lat2: number, lng2: number, n: num
 /* ── Script loader ── */
 /* ── Solar position & day/night terminator ── */
 function getSunPosition(date: Date): { lat: number; lng: number } {
-  // Simplified solar declination + hour angle → subsolar point
   const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
-  // Solar declination (approximate)
   const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
-  // Hour angle: sun is directly overhead at solar noon (12:00 UTC at 0° longitude)
   const hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
-  const lng = (12 - hours) * 15; // 15° per hour, noon = 0° longitude
+  const lng = (12 - hours) * 15;
   return { lat: declination, lng: lng > 180 ? lng - 360 : lng < -180 ? lng + 360 : lng };
 }
 
-function getTerminatorPoints(sunLat: number, sunLng: number, numPoints: number, offset = 0): { lat: number; lng: number }[] {
-  // The terminator is the great circle 90° from the subsolar point
-  // offset: 0 = terminator, positive = into night side (for twilight bands)
+function getTerminatorPoints(sunLat: number, sunLng: number, numPoints: number): { lat: number; lng: number }[] {
   const toRad = (d: number) => d * Math.PI / 180;
   const toDeg = (r: number) => r * 180 / Math.PI;
   const φs = toRad(sunLat);
   const λs = toRad(sunLng);
-  const angularRadius = toRad(90 + offset); // 90° = terminator, >90 = twilight
 
   const points: { lat: number; lng: number }[] = [];
   for (let i = 0; i <= numPoints; i++) {
     const bearing = (2 * Math.PI * i) / numPoints;
     const φ = Math.asin(
-      Math.sin(φs) * Math.cos(angularRadius) +
-      Math.cos(φs) * Math.sin(angularRadius) * Math.cos(bearing)
+      Math.sin(φs) * Math.cos(Math.PI / 2) +
+      Math.cos(φs) * Math.sin(Math.PI / 2) * Math.cos(bearing)
     );
     const λ = λs + Math.atan2(
-      Math.sin(bearing) * Math.sin(angularRadius) * Math.cos(φs),
-      Math.cos(angularRadius) - Math.sin(φs) * Math.sin(φ)
+      Math.sin(bearing) * Math.sin(Math.PI / 2) * Math.cos(φs),
+      Math.cos(Math.PI / 2) - Math.sin(φs) * Math.sin(φ)
     );
     let lngDeg = toDeg(λ);
     if (lngDeg > 180) lngDeg -= 360;
@@ -229,42 +223,44 @@ function getTerminatorPoints(sunLat: number, sunLng: number, numPoints: number, 
   return points;
 }
 
-// Build a closed polygon covering the night side of Earth
-function getNightPolygon(sunLat: number, sunLng: number, numPoints = 72): { lat: number; lng: number }[] {
-  const terminator = getTerminatorPoints(sunLat, sunLng, numPoints);
-  // The anti-solar point (center of night)
-  const nightLat = -sunLat;
-  const nightLng = sunLng > 0 ? sunLng - 180 : sunLng + 180;
+// Build small rectangular strips on the night side for safe rendering
+// (Polygon3DElement can't handle globe-wrapping polygons reliably)
+function getNightStrips(sunLat: number, sunLng: number): { lat: number; lng: number }[][] {
+  const toRad = (d: number) => d * Math.PI / 180;
+  const toDeg = (r: number) => r * 180 / Math.PI;
+  const φs = toRad(sunLat);
+  const λs = toRad(sunLng);
+  const antiSunLng = sunLng > 0 ? sunLng - 180 : sunLng + 180;
 
-  // We need to determine which side of the terminator is night.
-  // Sort terminator points by longitude for a clean polygon,
-  // then cap with the pole on the night side.
-  // Simpler approach: create a polygon that traces the terminator
-  // and then goes around the night-side pole.
+  const strips: { lat: number; lng: number }[][] = [];
+  const latStep = 15;
+  const lngStep = 15;
 
-  // Determine if north pole is on night side
-  const northPoleToSun = Math.acos(Math.sin(sunLat * Math.PI / 180)) * 180 / Math.PI;
-  const northIsNight = northPoleToSun > 90;
-  const capLat = northIsNight ? 90 : -90;
+  // For each latitude band, check if each cell is on the night side
+  for (let lat = -90; lat < 90; lat += latStep) {
+    for (let lng = -180; lng < 180; lng += lngStep) {
+      const cellCenterLat = lat + latStep / 2;
+      const cellCenterLng = lng + lngStep / 2;
 
-  // Sort terminator points by longitude
-  const sorted = [...terminator].sort((a, b) => a.lng - b.lng);
+      // Calculate angular distance from sun
+      const φ = toRad(cellCenterLat);
+      const λ = toRad(cellCenterLng);
+      const cosAngle = Math.sin(φs) * Math.sin(φ) + Math.cos(φs) * Math.cos(φ) * Math.cos(λ - λs);
+      const angleDeg = toDeg(Math.acos(Math.max(-1, Math.min(1, cosAngle))));
 
-  // Build night polygon: trace terminator east, then cap at the pole
-  const poly: { lat: number; lng: number }[] = [];
-
-  // Add terminator points sorted by longitude
-  for (const p of sorted) {
-    poly.push(p);
+      // Night side: > 90° from sun, skip cells near terminator for softer edge
+      if (angleDeg > 96) {
+        // Deep night
+        strips.push([
+          { lat, lng },
+          { lat, lng: lng + lngStep },
+          { lat: lat + latStep, lng: lng + lngStep },
+          { lat: lat + latStep, lng },
+        ]);
+      }
+    }
   }
-
-  // Close via the night-side pole
-  // Go from the eastern end of terminator → pole → back to western end
-  poly.push({ lat: capLat, lng: 180 });
-  poly.push({ lat: capLat, lng: -180 });
-  poly.push(sorted[0]); // close
-
-  return poly;
+  return strips;
 }
 
 const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
@@ -541,84 +537,57 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       if (cancelled) return;
 
       const { Polygon3DElement } = await google.maps.importLibrary("maps3d");
+      const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
       if (cancelled) return;
 
       const now = new Date();
       const sun = getSunPosition(now);
-      const nightPoly = getNightPolygon(sun.lat, sun.lng, 120);
 
-      // Convert to altitude-0 coords
-      const nightCoords = nightPoly.map(p => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
-
-      // Main night shadow — dark overlay
-      const nightOverlay = new Polygon3DElement({
-        altitudeMode: "CLAMP_TO_GROUND",
-        fillColor: "rgba(0, 3, 15, 0.45)",
-        strokeColor: "rgba(0, 0, 0, 0)",
-        strokeWidth: 0,
-        outerCoordinates: nightCoords,
-        drawsOccludedSegments: true,
-        zIndex: 1,
-      });
-      map.append(nightOverlay);
-      dayNightRef.current.push(nightOverlay);
-
-      // Civil twilight band (6° offset) — subtle transition
-      const twilightPoints = getTerminatorPoints(sun.lat, sun.lng, 120, -6);
-      const twilightSorted = [...twilightPoints].sort((a, b) => a.lng - b.lng);
-
-      // Build twilight strip between terminator and twilight line
-      const terminatorSorted = [...getTerminatorPoints(sun.lat, sun.lng, 120)].sort((a, b) => a.lng - b.lng);
-
-      // Create twilight polygon: trace terminator forward, then twilight line backward
-      const twilightPoly: { lat: number; lng: number; altitude: number }[] = [];
-      for (const p of terminatorSorted) {
-        twilightPoly.push({ lat: p.lat, lng: p.lng, altitude: 0 });
+      // Night shadow — many small rectangular strips (safe for 3D globe)
+      const strips = getNightStrips(sun.lat, sun.lng);
+      for (const strip of strips) {
+        const coords = strip.map(p => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
+        coords.push(coords[0]); // close
+        const poly = new Polygon3DElement({
+          altitudeMode: "CLAMP_TO_GROUND",
+          fillColor: "rgba(0, 2, 12, 0.42)",
+          strokeColor: "rgba(0, 0, 0, 0)",
+          strokeWidth: 0,
+          outerCoordinates: coords,
+          drawsOccludedSegments: true,
+          zIndex: 1,
+        });
+        map.append(poly);
+        dayNightRef.current.push(poly);
       }
-      // Reverse twilight line to close the strip
-      for (let i = twilightSorted.length - 1; i >= 0; i--) {
-        twilightPoly.push({ lat: twilightSorted[i].lat, lng: twilightSorted[i].lng, altitude: 0 });
-      }
-      twilightPoly.push(twilightPoly[0]); // close
 
-      const twilightOverlay = new Polygon3DElement({
-        altitudeMode: "CLAMP_TO_GROUND",
-        fillColor: "rgba(0, 5, 25, 0.2)",
-        strokeColor: "rgba(0, 0, 0, 0)",
-        strokeWidth: 0,
-        outerCoordinates: twilightPoly,
-        drawsOccludedSegments: true,
-        zIndex: 1,
-      });
-      map.append(twilightOverlay);
-      dayNightRef.current.push(twilightOverlay);
+      // Terminator line — the day/night boundary
+      const terminatorPts = getTerminatorPoints(sun.lat, sun.lng, 120);
+      // Sort by longitude for a clean line
+      const sorted = [...terminatorPts].sort((a, b) => a.lng - b.lng);
+      const lineCoords = sorted.map(p => ({ lat: p.lat, lng: p.lng, altitude: 200 }));
 
-      // Terminator line — subtle glowing edge
-      const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
-      if (cancelled) return;
-
-      const terminatorLineCoords = terminatorSorted.map(p => ({ lat: p.lat, lng: p.lng, altitude: 100 }));
-      // Soft outer glow
-      const terminatorGlow = new Polyline3DElement({
+      // Soft amber outer glow
+      const glow = new Polyline3DElement({
         altitudeMode: "ABSOLUTE",
-        strokeColor: "rgba(255, 180, 60, 0.08)",
-        strokeWidth: 30,
-        coordinates: terminatorLineCoords,
+        strokeColor: "rgba(255, 170, 50, 0.06)",
+        strokeWidth: 40,
+        coordinates: lineCoords,
         drawsOccludedSegments: true,
       });
-      map.append(terminatorGlow);
-      dayNightRef.current.push(terminatorGlow);
+      map.append(glow);
+      dayNightRef.current.push(glow);
 
       // Core terminator line
-      const terminatorLine = new Polyline3DElement({
+      const line = new Polyline3DElement({
         altitudeMode: "ABSOLUTE",
-        strokeColor: "rgba(255, 200, 100, 0.15)",
-        strokeWidth: 4,
-        coordinates: terminatorLineCoords,
+        strokeColor: "rgba(255, 200, 100, 0.18)",
+        strokeWidth: 3,
+        coordinates: lineCoords,
         drawsOccludedSegments: true,
       });
-      map.append(terminatorLine);
-      dayNightRef.current.push(terminatorLine);
+      map.append(line);
+      dayNightRef.current.push(line);
     };
 
     drawTerminator();
