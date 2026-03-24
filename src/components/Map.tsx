@@ -29,11 +29,22 @@ const MARKER_SIZE_SELECTED = 68;
 const MARKER_SIZE_GROUND = 36;
 const MARKER_SIZE_GROUND_ZOOMED = 52;
 const MARKER_SIZE_AIRBORNE = 56;
+const MARKER_SIZE_MIN_AIRBORNE = 32;  // Never smaller than 32px (FlightAware-like)
+const MARKER_SIZE_MIN_SELECTED = 40;
+const MARKER_SIZE_MIN_GROUND = 20;
 const ZOOM_CLOSE_RANGE = 200000;   // 200km — airport level
 const ZOOM_CLOSE_2D = 10;
 const NEARBY_AIRPORT_DEG = 1.5;    // ~90nm radius
 const MAX_POSITION_HISTORY = 200;
 const GROUND_SELECT_MAX_RANGE = 5000;
+
+/* ── Altitude-based color coding (FlightAware-style) ── */
+function altitudeColor(altitude: number, onGround: boolean): string {
+  if (onGround) return "#4CAF50";             // Green — on ground
+  if (altitude < 10000) return "#F5A623";     // Gold/amber — low altitude
+  if (altitude <= 25000) return "#F0C040";    // Light orange — mid altitude
+  return "#ffffff";                           // White — cruise altitude
+}
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
 
@@ -833,39 +844,48 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     for (const [id] of posHistoryRef.current) {
       if (!visibleIds.has(id)) posHistoryRef.current.delete(id);
     }
-    const currentIds = new Set(visible.map((f) => f.id));
     const existing = markersRef.current;
+    const zoomedIn = isZoomedInRef.current;
 
+    // Dynamic marker sizing based on camera range (3D) or zoom (2D)
+    const range3d = is3dRef.current ? cameraRangeRef.current : null;
+    const computeSize = (baseSize: number, minSize: number) => {
+      if (range3d === null) return baseSize; // 2D mode uses base sizes
+      const clampedRange = Math.max(200000, Math.min(6000000, range3d));
+      const t = (Math.log(clampedRange) - Math.log(200000)) / (Math.log(6000000) - Math.log(200000));
+      return Math.round(minSize + (baseSize - minSize) * (1 - t));
+    };
+
+    // Zoom-based flight filtering: don't render all 3500+ at globe view
+    // At low zoom (globe, range > 8000km): sample ~400 spread evenly
+    // At medium zoom (continent, range 1000-8000km): show all airborne, hide ground
+    // At high zoom (< 1000km): show everything including ground
+    const hideGround = !zoomedIn && range3d !== null && range3d > 500000;
+    const sampleFlights = range3d !== null && range3d > 8000000;
+    let renderList = visible;
+    if (sampleFlights) {
+      const step = Math.max(1, Math.floor(visible.length / 400));
+      const sampled = visible.filter((_, i) => i % step === 0);
+      if (selectedRef.current && !sampled.find(f => f.id === selectedRef.current?.id)) {
+        const sel = visible.find(f => f.id === selectedRef.current?.id);
+        if (sel) sampled.push(sel);
+      }
+      renderList = sampled;
+    }
+
+    // Clean up markers not in the current render set
+    const renderIds = new Set(renderList.map((f) => f.id));
     for (const [id, m] of existing) {
-      if (!currentIds.has(id)) {
+      if (!renderIds.has(id)) {
         try { m.remove?.(); m.setMap?.(null); } catch {}
         existing.delete(id);
       }
     }
 
-    const zoomedIn = isZoomedInRef.current;
-
-    // Dynamic marker sizing based on camera range (3D) or zoom (2D)
-    // At globe view (8,000km+) → small but visible icons (~20px)
-    // At airport level (<200km) → full size icons
-    const range3d = is3dRef.current ? cameraRangeRef.current : null;
-    const computeSize = (baseSize: number, minSize: number) => {
-      if (range3d === null) return baseSize; // 2D mode uses base sizes
-      // Clamp range to [200km, 8000km] for interpolation
-      const clampedRange = Math.max(200000, Math.min(8000000, range3d));
-      // Log scale interpolation: smooth transition across zoom levels
-      const t = (Math.log(clampedRange) - Math.log(200000)) / (Math.log(8000000) - Math.log(200000));
-      return Math.round(minSize + (baseSize - minSize) * (1 - t));
-    };
-
-    // Hide ground aircraft when zoomed out — they cluster at airports creating blobs.
-    // FlightAware does the same: "15,795 flights decluttered (zoom in to see more)"
-    const hideGround = !zoomedIn && range3d !== null && range3d > 500000;
-
     if (is3dRef.current) {
       const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
 
-      for (const f of visible) {
+      for (const f of renderList) {
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
 
@@ -876,9 +896,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           continue;
         }
 
-        const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
+        // Altitude-based color coding (FlightAware-style)
+        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
         const baseSize = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
-        const minIcon = isSel ? 28 : 20;
+        const minIcon = isSel ? MARKER_SIZE_MIN_SELECTED : isGround ? MARKER_SIZE_MIN_GROUND : MARKER_SIZE_MIN_AIRBORNE;
         const sz = computeSize(baseSize, minIcon);
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
@@ -925,10 +946,20 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     } else {
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-      // In 2D, hide ground when zoom < 10 (same concept as 3D hideGround)
+      // In 2D, hide ground when zoom < 8 (same concept as 3D hideGround)
       const zoom2d = map.getZoom ? map.getZoom() : 15;
       const hideGround2d = !zoomedIn && zoom2d !== null && zoom2d < 8;
-      for (const f of visible) {
+      // In 2D at low zoom, sample flights like in 3D
+      let renderList2d: typeof visible = visible;
+      if (zoom2d !== null && zoom2d < 4) {
+        const step = Math.max(1, Math.floor(visible.length / 400));
+        renderList2d = visible.filter((_, i) => i % step === 0);
+        if (selectedRef.current && !renderList2d.find(f => f.id === selectedRef.current?.id)) {
+          const sel = visible.find(f => f.id === selectedRef.current?.id);
+          if (sel) renderList2d.push(sel);
+        }
+      }
+      for (const f of renderList2d) {
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
 
@@ -938,7 +969,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           continue;
         }
 
-        const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
+        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
         const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
         const mkEl = () => {
           const div = document.createElement("div");
