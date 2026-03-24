@@ -39,10 +39,8 @@ const GROUND_SHOW_RANGE = 50000;   // 50km — show ground traffic (~zoom 12 equ
 /* ── Zoom-based icon sizing (range in meters → pixel size) ── */
 function computeIconSize(range3d: number | null, zoom2d: number | null, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  // In 3D mode, convert range to approximate equivalent zoom for sizing
   let effectiveZoom: number;
   if (range3d !== null) {
-    // Approximate: zoom ≈ 22 - log2(range_meters / 200)
     effectiveZoom = Math.max(0, Math.min(20, 22 - Math.log2(range3d / 200)));
   } else if (zoom2d !== null) {
     effectiveZoom = zoom2d;
@@ -53,40 +51,54 @@ function computeIconSize(range3d: number | null, zoom2d: number | null, isSel: b
     if (effectiveZoom >= 14) return 52;
     return 36;
   }
-  // Airborne sizing — FlightAware-comparable at every zoom level
-  if (effectiveZoom < 5) return 28;      // Globe view
-  if (effectiveZoom < 7) return 34;      // Country view
-  if (effectiveZoom < 9) return 40;      // Region view
-  if (effectiveZoom < 12) return 46;     // City view
-  return 52;                             // Airport view
+  if (effectiveZoom < 5) return 28;
+  if (effectiveZoom < 7) return 34;
+  if (effectiveZoom < 9) return 40;
+  if (effectiveZoom < 12) return 46;
+  return 52;
 }
 
-/* ── Altitude-based color coding (FlightAware-style: amber/orange for cruise) ── */
-function altitudeColor(altitude: number, onGround: boolean): string {
-  if (onGround) return "#4CAF50";             // Green — on ground
-  if (altitude <= 0) return "#888888";        // Gray — unknown altitude
-  if (altitude < 10000) return "#ffffff";     // White — low altitude (departures/arrivals)
-  if (altitude <= 25000) return "#F0C040";    // Light amber — mid altitude (climbing/descending)
-  return "#F5A623";                           // Warm amber — cruise altitude (FlightAware orange)
-}
-
-/* ── Geo-grid sampling: ensures flights spread globally, not clumped by data order ── */
-function sampleByGeoGrid(flights: Flight[], maxPerCell: number): Flight[] {
-  const grid: Record<string, Flight[]> = {};
-  for (const f of flights) {
-    // 20x10 grid (18° cells): evenly covers globe
-    const cellX = Math.floor((f.currentLng + 180) / 18);
-    const cellY = Math.floor((f.currentLat + 90) / 18);
-    const key = `${cellX}-${cellY}`;
-    if (!grid[key]) grid[key] = [];
-    if (grid[key].length < maxPerCell) grid[key].push(f);
-  }
-  return Object.values(grid).flat();
+/* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
+function getAircraftColor(f: Flight): string {
+  return isGroundTraffic(f) ? "#F5A623" : "#FFFFFF";
 }
 
 /* ── Determine if a flight is ground traffic ── */
 function isGroundTraffic(f: Flight): boolean {
-  return f.onGround || (f.altitude > 0 && f.altitude < 1000) || (f.speed > 0 && f.speed < 50);
+  return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
+}
+
+/* ── Hard marker cap per zoom level — prevents blob overlap permanently ── */
+const MAX_MARKERS_BY_ZOOM: Record<number, number> = {
+  0: 150, 1: 150, 2: 200, 3: 250, 4: 300, 5: 350,
+  6: 400, 7: 400, 8: 400, 9: 400, 10: 400, 11: 400, 12: 500,
+};
+
+function sampleToLimit(flights: Flight[], effectiveZoom: number): Flight[] {
+  const maxMarkers = MAX_MARKERS_BY_ZOOM[Math.min(Math.round(effectiveZoom), 12)] ?? 400;
+  if (flights.length <= maxMarkers) return flights;
+
+  // Geographic grid sampling: divide world into cells, take evenly from each
+  // Grid resolution adapts to zoom: finer grid at higher zoom
+  const cellSize = effectiveZoom < 5 ? 18 : effectiveZoom < 8 ? 9 : 4;
+  const gridCols = Math.ceil(360 / cellSize);
+  const gridRows = Math.ceil(180 / cellSize);
+  const totalCells = gridCols * gridRows;
+  const perCell = Math.max(1, Math.ceil(maxMarkers / totalCells));
+
+  const grid: Record<string, Flight[]> = {};
+  for (const f of flights) {
+    const cellX = Math.floor((f.currentLng + 180) / cellSize);
+    const cellY = Math.floor((f.currentLat + 90) / cellSize);
+    const key = `${cellX}-${cellY}`;
+    if (!grid[key]) grid[key] = [];
+    if (grid[key].length < perCell) grid[key].push(f);
+  }
+
+  const result = Object.values(grid).flat();
+  // If still over limit (many flights in few cells), truncate
+  if (result.length > maxMarkers) return result.slice(0, maxMarkers);
+  return result;
 }
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
@@ -891,23 +903,30 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const zoomedIn = isZoomedInRef.current;
     const range3d = is3dRef.current ? cameraRangeRef.current : null;
 
-    // Ground traffic: only show at airport-level zoom (range < 50km ≈ zoom 12)
-    const showGround = range3d !== null ? range3d < GROUND_SHOW_RANGE : zoomedIn;
-
-    // Globe view (range > 8000km): use geo-grid sampling for even global distribution
-    // Mid zoom: show all airborne, hide ground
-    // Airport zoom: show everything
-    const isGlobeView = range3d !== null && range3d > 8000000;
-    let renderList: Flight[];
-    if (isGlobeView) {
-      // Geo-grid sampling: 20x10 grid, up to 12 flights per cell → ~2000 max, evenly spread globally
-      const airborne = visible.filter(f => !isGroundTraffic(f));
-      renderList = sampleByGeoGrid(airborne, 12);
-    } else if (!showGround) {
-      renderList = visible.filter(f => !isGroundTraffic(f));
+    // Compute effective zoom for all decisions
+    let effectiveZoom: number;
+    if (range3d !== null) {
+      effectiveZoom = Math.max(0, Math.min(20, 22 - Math.log2(range3d / 200)));
+    } else if (!is3dRef.current && map.getZoom) {
+      effectiveZoom = map.getZoom() ?? 5;
     } else {
-      renderList = visible;
+      effectiveZoom = 5;
     }
+
+    // Ground traffic: ONLY visible at zoom >= 12 (runway level). Non-negotiable.
+    const showGround = effectiveZoom >= 12;
+
+    // Step 1: Filter ground traffic when zoomed out
+    let candidates: Flight[];
+    if (showGround) {
+      candidates = visible;
+    } else {
+      candidates = visible.filter(f => !isGroundTraffic(f));
+    }
+
+    // Step 2: Hard cap via geographic grid sampling — no more blobs
+    let renderList = sampleToLimit(candidates, effectiveZoom);
+
     // Always include selected flight
     if (selectedRef.current && !renderList.find(f => f.id === selectedRef.current?.id)) {
       const sel = visible.find(f => f.id === selectedRef.current?.id);
@@ -930,8 +949,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = isGroundTraffic(f);
 
-        // Altitude-based color coding (FlightAware-style: amber for cruise)
-        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
+        // Strict color: WHITE = airborne, ORANGE = ground, CYAN = selected
+        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : getAircraftColor(f);
         const sz = computeIconSize(range3d, null, isSel, isGround);
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
@@ -979,11 +998,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     } else {
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       const zoom2d = map.getZoom ? map.getZoom() : 15;
-      // 2D uses the same renderList (already filtered/sampled above)
       for (const f of renderList) {
         const isSel = f.id === selectedRef.current?.id;
         const isGround = isGroundTraffic(f);
-        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
+        const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : getAircraftColor(f);
         const sz = computeIconSize(null, zoom2d, isSel, isGround);
         const mkEl = () => {
           const div = document.createElement("div");
