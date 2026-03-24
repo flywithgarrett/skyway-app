@@ -502,6 +502,28 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     let cancelled = false;
     const toRad = (d: number) => d * Math.PI / 180;
 
+    // City lights data for night side rendering
+    const cities = [
+      {lat:40.71,lng:-74.01,s:3.2},{lat:34.05,lng:-118.24,s:2.5},{lat:41.88,lng:-87.63,s:2.2},
+      {lat:29.76,lng:-95.37,s:1.8},{lat:33.45,lng:-112.07,s:1.4},{lat:39.95,lng:-75.17,s:1.5},
+      {lat:32.78,lng:-96.80,s:1.3},{lat:37.77,lng:-122.42,s:1.2},{lat:47.61,lng:-122.33,s:1.0},
+      {lat:38.91,lng:-77.04,s:1.1},{lat:42.36,lng:-71.06,s:1.0},{lat:33.75,lng:-84.39,s:1.2},
+      {lat:25.76,lng:-80.19,s:1.3},{lat:39.74,lng:-104.99,s:0.9},{lat:44.98,lng:-93.27,s:0.8},
+      {lat:43.65,lng:-79.38,s:2.0},{lat:45.50,lng:-73.57,s:1.4},{lat:49.28,lng:-123.12,s:0.9},
+      {lat:19.43,lng:-99.13,s:3.5},{lat:-23.55,lng:-46.63,s:3.8},{lat:-22.91,lng:-43.17,s:2.8},
+      {lat:-34.60,lng:-58.38,s:2.2},{lat:4.71,lng:-74.07,s:2.5},{lat:-12.05,lng:-77.04,s:3.0},
+      {lat:51.51,lng:-0.13,s:3.2},{lat:48.86,lng:2.35,s:2.0},{lat:52.52,lng:13.41,s:2.2},
+      {lat:40.42,lng:-3.70,s:2.0},{lat:41.90,lng:12.50,s:1.8},{lat:55.76,lng:37.62,s:3.5},
+      {lat:41.01,lng:28.98,s:3.8},{lat:30.04,lng:31.24,s:3.2},{lat:6.52,lng:3.38,s:3.8},
+      {lat:-26.20,lng:28.04,s:2.5},{lat:25.20,lng:55.27,s:2.0},{lat:35.68,lng:139.69,s:4.0},
+      {lat:31.23,lng:121.47,s:4.5},{lat:39.90,lng:116.40,s:4.2},{lat:22.32,lng:114.17,s:2.8},
+      {lat:1.35,lng:103.82,s:2.5},{lat:13.76,lng:100.50,s:3.0},{lat:28.61,lng:77.23,s:3.8},
+      {lat:19.08,lng:72.88,s:4.0},{lat:37.57,lng:126.98,s:3.2},{lat:-33.87,lng:151.21,s:2.5},
+      {lat:28.55,lng:-81.38,s:1.0},{lat:36.17,lng:-115.14,s:1.1},{lat:35.23,lng:-80.84,s:0.8},
+      {lat:30.27,lng:-97.74,s:0.9},{lat:42.33,lng:-83.05,s:0.8},{lat:39.10,lng:-84.51,s:0.7},
+      {lat:35.15,lng:-90.05,s:0.6},{lat:36.16,lng:-86.78,s:0.7},{lat:29.95,lng:-90.07,s:0.5},
+    ];
+
     const update = () => {
       if (cancelled || !div) return;
 
@@ -529,42 +551,79 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       div.style.opacity = "1";
 
       // Sun direction relative to camera center in screen-space
-      // deltaLng > 0 means sun is to the right of camera center
       let deltaLng = sun.lng - camLng;
       if (deltaLng > 180) deltaLng -= 360;
       if (deltaLng < -180) deltaLng += 360;
       const deltaLat = sun.lat - camLat;
 
-      // Convert to screen angle (sun direction)
-      // On screen: positive deltaLng = rightward, positive deltaLat = upward
-      const sunAngle = Math.atan2(-deltaLat, deltaLng); // radians, 0 = right
+      // Screen angle FROM camera center TOWARD the sun
+      // CSS linear-gradient angle: 0deg = bottom→top, 90deg = left→right
+      // atan2 gives angle where 0 = right on screen
+      // We want gradient to go FROM sun side (light) TO anti-sun side (dark)
+      const sunScreenAngle = Math.atan2(-deltaLat, deltaLng) * 180 / Math.PI;
+      // CSS gradient angle: goes IN the direction specified
+      // We want darkness to increase AWAY from the sun
+      // So gradient direction should point AWAY from sun (add 180°)
+      const gradAngle = sunScreenAngle + 180 + 90; // +90 converts from math coords to CSS coords
 
-      // How much of the visible globe is on the night side?
-      // cosAngle at camera center: >0 = day, <0 = night
+      // Solar cosine at camera center
       const φ = toRad(camLat);
       const λ = toRad(camLng);
       const cosAngle = Math.sin(sunLatRad) * Math.sin(φ) +
         Math.cos(sunLatRad) * Math.cos(φ) * Math.cos(λ - sunLngRad);
 
-      // The gradient position: how far along the gradient is the terminator
-      // cosAngle = 1 → center is full day, terminator far to one side
-      // cosAngle = 0 → terminator at center
-      // cosAngle = -1 → center is full night, terminator far to other side
-      // Map to a percentage (0% = sun side edge, 100% = night side edge)
-      const terminatorPos = Math.max(5, Math.min(95, 50 - cosAngle * 45));
+      // terminatorPos: where the terminator crosses the gradient axis (0-100%)
+      // cosAngle=1 → full day, terminator at far end → terminatorPos near 95
+      // cosAngle=0 → terminator at center → 50
+      // cosAngle=-1 → full night, terminator near start → 5
+      const terminatorPos = Math.max(5, Math.min(95, 50 + cosAngle * 42));
 
-      // Gradient direction perpendicular to the terminator line
-      const gradAngle = (sunAngle * 180 / Math.PI) + 90; // degrees
+      const nightAlpha = 0.82 * zoomFade;
+      const twilightAlpha = 0.4 * zoomFade;
 
-      // Build the gradient: transparent on day side, dark on night side
-      const nightColor = `rgba(2, 4, 16, ${(0.78 * zoomFade).toFixed(2)})`;
-      const twilightColor = `rgba(2, 4, 16, ${(0.35 * zoomFade).toFixed(2)})`;
+      // City lights — radial gradients layered on top of the linear gradient
+      const fovDeg = Math.min(160, (camRange / 111320) * 0.7);
+      const aspectRatio = (div.clientWidth || 1) / (div.clientHeight || 1);
+      const lightLayers: string[] = [];
 
-      div.style.background = `linear-gradient(${gradAngle.toFixed(1)}deg,
-        transparent ${(terminatorPos - 25).toFixed(1)}%,
-        ${twilightColor} ${(terminatorPos - 5).toFixed(1)}%,
-        ${nightColor} ${(terminatorPos + 15).toFixed(1)}%,
-        ${nightColor} 100%)`;
+      for (const city of cities) {
+        const cφ = toRad(city.lat);
+        const cλ = toRad(city.lng);
+        const cosSun = Math.sin(sunLatRad) * Math.sin(cφ) +
+          Math.cos(sunLatRad) * Math.cos(cφ) * Math.cos(cλ - sunLngRad);
+        if (cosSun > -0.02) continue;
+
+        let dLng = city.lng - camLng;
+        if (dLng > 180) dLng -= 360;
+        if (dLng < -180) dLng += 360;
+        const dLat = city.lat - camLat;
+
+        const sx = 50 + (dLng / (fovDeg * aspectRatio * 0.5)) * 50;
+        const sy = 50 - (dLat / (fovDeg * 0.5)) * 50;
+
+        if (sx < -5 || sx > 105 || sy < -5 || sy > 105) continue;
+
+        const nightDepth = Math.min(1, -cosSun * 4);
+        const alpha = nightDepth * zoomFade * 0.65;
+        if (alpha < 0.05) continue;
+
+        const sizePx = city.s * Math.max(4, Math.min(20, camRange / 2000000));
+
+        lightLayers.push(
+          `radial-gradient(circle ${sizePx.toFixed(0)}px at ${sx.toFixed(1)}% ${sy.toFixed(1)}%, rgba(255,230,130,${(alpha * 0.9).toFixed(2)}) 0%, rgba(255,200,80,${(alpha * 0.3).toFixed(2)}) 40%, transparent 100%)`
+        );
+      }
+
+      // Combine: city lights on top, night gradient on bottom
+      const nightGrad = `linear-gradient(${gradAngle.toFixed(1)}deg,
+        transparent ${Math.max(0, terminatorPos - 20).toFixed(1)}%,
+        rgba(2,4,16,${twilightAlpha.toFixed(2)}) ${terminatorPos.toFixed(1)}%,
+        rgba(2,4,16,${nightAlpha.toFixed(2)}) ${Math.min(100, terminatorPos + 18).toFixed(1)}%,
+        rgba(2,4,16,${nightAlpha.toFixed(2)}) 100%)`;
+
+      div.style.background = lightLayers.length > 0
+        ? [...lightLayers, nightGrad].join(", ")
+        : nightGrad;
 
       animFrame = requestAnimationFrame(update);
     };
