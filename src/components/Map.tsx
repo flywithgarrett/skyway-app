@@ -198,6 +198,94 @@ function getSunPosition(date: Date): { lat: number; lng: number } {
   return { lat: declination, lng: lng > 180 ? lng - 360 : lng < -180 ? lng + 360 : lng };
 }
 
+/* ── Major world cities for night lights ── */
+const CITY_LIGHTS: { lat: number; lng: number; pop: number }[] = [
+  // North America
+  { lat: 40.71, lng: -74.01, pop: 8.3 }, // NYC
+  { lat: 34.05, lng: -118.24, pop: 3.9 }, // LA
+  { lat: 41.88, lng: -87.63, pop: 2.7 }, // Chicago
+  { lat: 29.76, lng: -95.37, pop: 2.3 }, // Houston
+  { lat: 33.45, lng: -112.07, pop: 1.6 }, // Phoenix
+  { lat: 29.95, lng: -90.07, pop: 0.4 }, // New Orleans
+  { lat: 39.95, lng: -75.17, pop: 1.6 }, // Philadelphia
+  { lat: 32.78, lng: -96.80, pop: 1.3 }, // Dallas
+  { lat: 37.77, lng: -122.42, pop: 0.9 }, // SF
+  { lat: 47.61, lng: -122.33, pop: 0.7 }, // Seattle
+  { lat: 38.91, lng: -77.04, pop: 0.7 }, // DC
+  { lat: 42.36, lng: -71.06, pop: 0.7 }, // Boston
+  { lat: 33.75, lng: -84.39, pop: 0.5 }, // Atlanta
+  { lat: 25.76, lng: -80.19, pop: 0.5 }, // Miami
+  { lat: 39.74, lng: -104.99, pop: 0.7 }, // Denver
+  { lat: 44.98, lng: -93.27, pop: 0.4 }, // Minneapolis
+  { lat: 43.65, lng: -79.38, pop: 2.9 }, // Toronto
+  { lat: 45.50, lng: -73.57, pop: 1.8 }, // Montreal
+  { lat: 49.28, lng: -123.12, pop: 0.7 }, // Vancouver
+  { lat: 19.43, lng: -99.13, pop: 9.2 }, // Mexico City
+  { lat: 23.13, lng: -82.38, pop: 2.1 }, // Havana
+  // South America
+  { lat: -23.55, lng: -46.63, pop: 12.3 }, // São Paulo
+  { lat: -22.91, lng: -43.17, pop: 6.7 }, // Rio
+  { lat: -34.60, lng: -58.38, pop: 3.1 }, // Buenos Aires
+  { lat: -33.45, lng: -70.67, pop: 5.6 }, // Santiago
+  { lat: 4.71, lng: -74.07, pop: 7.4 }, // Bogotá
+  { lat: -12.05, lng: -77.04, pop: 9.7 }, // Lima
+  { lat: 10.49, lng: -66.88, pop: 2.0 }, // Caracas
+  // Europe
+  { lat: 51.51, lng: -0.13, pop: 9.0 }, // London
+  { lat: 48.86, lng: 2.35, pop: 2.2 }, // Paris
+  { lat: 52.52, lng: 13.41, pop: 3.6 }, // Berlin
+  { lat: 40.42, lng: -3.70, pop: 3.2 }, // Madrid
+  { lat: 41.39, lng: 2.17, pop: 1.6 }, // Barcelona
+  { lat: 41.90, lng: 12.50, pop: 2.9 }, // Rome
+  { lat: 52.37, lng: 4.90, pop: 0.9 }, // Amsterdam
+  { lat: 50.85, lng: 4.35, pop: 1.2 }, // Brussels
+  { lat: 48.21, lng: 16.37, pop: 1.9 }, // Vienna
+  { lat: 55.76, lng: 37.62, pop: 12.5 }, // Moscow
+  { lat: 59.93, lng: 30.32, pop: 5.4 }, // St Petersburg
+  { lat: 59.33, lng: 18.07, pop: 1.0 }, // Stockholm
+  { lat: 50.08, lng: 14.44, pop: 1.3 }, // Prague
+  { lat: 47.50, lng: 19.04, pop: 1.8 }, // Budapest
+  { lat: 52.23, lng: 21.01, pop: 1.8 }, // Warsaw
+  { lat: 38.72, lng: -9.14, pop: 0.5 }, // Lisbon
+  { lat: 37.98, lng: 23.73, pop: 3.2 }, // Athens
+  { lat: 41.01, lng: 28.98, pop: 15.5 }, // Istanbul
+  // Africa
+  { lat: 30.04, lng: 31.24, pop: 10.0 }, // Cairo
+  { lat: 6.52, lng: 3.38, pop: 15.4 }, // Lagos
+  { lat: -1.29, lng: 36.82, pop: 4.4 }, // Nairobi
+  { lat: -26.20, lng: 28.04, pop: 5.8 }, // Johannesburg
+  { lat: -33.93, lng: 18.42, pop: 4.0 }, // Cape Town
+  { lat: 33.87, lng: -6.83, pop: 3.5 }, // Casablanca/Rabat
+  { lat: 9.02, lng: 38.75, pop: 3.4 }, // Addis Ababa
+  // Middle East
+  { lat: 25.20, lng: 55.27, pop: 3.4 }, // Dubai
+  { lat: 24.45, lng: 54.65, pop: 1.5 }, // Abu Dhabi
+  { lat: 25.29, lng: 51.53, pop: 2.0 }, // Doha
+  { lat: 21.49, lng: 39.19, pop: 4.1 }, // Jeddah
+  { lat: 24.69, lng: 46.72, pop: 7.0 }, // Riyadh
+  { lat: 32.06, lng: 34.78, pop: 0.5 }, // Tel Aviv
+  // Asia
+  { lat: 35.68, lng: 139.69, pop: 14.0 }, // Tokyo
+  { lat: 31.23, lng: 121.47, pop: 24.9 }, // Shanghai
+  { lat: 39.90, lng: 116.40, pop: 21.5 }, // Beijing
+  { lat: 22.32, lng: 114.17, pop: 7.5 }, // Hong Kong
+  { lat: 1.35, lng: 103.82, pop: 5.7 }, // Singapore
+  { lat: 13.76, lng: 100.50, pop: 10.5 }, // Bangkok
+  { lat: 28.61, lng: 77.23, pop: 19.0 }, // Delhi
+  { lat: 19.08, lng: 72.88, pop: 20.4 }, // Mumbai
+  { lat: 37.57, lng: 126.98, pop: 9.7 }, // Seoul
+  { lat: 35.69, lng: 51.39, pop: 8.7 }, // Tehran
+  { lat: 14.60, lng: 120.98, pop: 1.8 }, // Manila
+  { lat: -6.21, lng: 106.85, pop: 10.6 }, // Jakarta
+  { lat: 3.14, lng: 101.69, pop: 1.8 }, // Kuala Lumpur
+  { lat: 23.81, lng: 90.41, pop: 8.9 }, // Dhaka
+  { lat: 34.05, lng: -5.00, pop: 1.2 }, // Fez
+  // Oceania
+  { lat: -33.87, lng: 151.21, pop: 5.3 }, // Sydney
+  { lat: -37.81, lng: 144.96, pop: 5.0 }, // Melbourne
+  { lat: -36.85, lng: 174.76, pop: 1.7 }, // Auckland
+];
+
 const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
 let scriptPromise: Promise<void> | null = null;
 function loadGoogleMaps(): Promise<void> {
@@ -457,7 +545,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => { if (animFrame) cancelAnimationFrame(animFrame); };
   }, [mapReady, updateAirportPulse]);
 
-  /* ══ Day/Night — canvas overlay with smooth terminator ══ */
+  /* ══ Day/Night — premium canvas overlay with city lights ══ */
   const dayNightCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -467,18 +555,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const container = containerRef.current;
     if (!container) return;
 
-    // Create canvas overlay
     let canvas = dayNightCanvasRef.current;
     if (!canvas) {
       canvas = document.createElement("canvas");
-      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;mix-blend-mode:multiply;";
+      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;";
       container.parentElement?.appendChild(canvas);
       dayNightCanvasRef.current = canvas;
     }
 
     let animFrame: number | null = null;
     let cancelled = false;
-
     const toRad = (d: number) => d * Math.PI / 180;
 
     const render = () => {
@@ -498,7 +584,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const sunLatRad = toRad(sun.lat);
       const sunLngRad = toRad(sun.lng);
 
-      // Get camera center from the 3D map
       let camLat = 38, camLng = -97, camRange = 12000000;
       try {
         if (map.center) {
@@ -508,90 +593,128 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         camRange = map.range ?? 12000000;
       } catch {}
 
-      // How far we see (in degrees) — approximation from camera range
+      // Fade out completely when zoomed in (< 500km range = airport level)
+      // Full effect at globe view (> 3000km)
+      const zoomFade = Math.max(0, Math.min(1, (camRange - 500000) / 2500000));
+      if (zoomFade < 0.01) {
+        ctx.clearRect(0, 0, w, h);
+        animFrame = requestAnimationFrame(render);
+        return;
+      }
+
       const fovDeg = Math.min(180, (camRange / 111320) * 0.8);
 
-      // For each pixel column, compute the longitude
-      // For each pixel row, compute the latitude
-      // Then compute solar elevation angle → darkness
-
-      // Create image data for pixel manipulation
-      const imageData = ctx.createImageData(w, h);
-      const data = imageData.data;
-
-      // Sampling at quarter resolution for performance, then scale
-      const step = 4;
+      // Sample at 1/6 resolution for performance
+      const step = 6;
       const sw = Math.ceil(w / step);
       const sh = Math.ceil(h / step);
-
-      // Compute darkness values at sample points
       const samples = new Float32Array(sw * sh);
 
       for (let sy = 0; sy < sh; sy++) {
         for (let sx = 0; sx < sw; sx++) {
-          // Map pixel to lat/lng based on camera view
-          const px = (sx / sw - 0.5) * 2; // -1 to 1
-          const py = (sy / sh - 0.5) * 2; // -1 to 1
-
+          const px = (sx / sw - 0.5) * 2;
+          const py = (sy / sh - 0.5) * 2;
           const lat = camLat - py * fovDeg * 0.5;
           const lng = camLng + px * fovDeg * 0.5 * (w / h);
 
           if (lat < -90 || lat > 90) { samples[sy * sw + sx] = 0; continue; }
 
-          // Solar angle: dot product of surface normal and sun direction
           const φ = toRad(lat);
           const λ = toRad(lng);
           const cosAngle = Math.sin(sunLatRad) * Math.sin(φ) +
             Math.cos(sunLatRad) * Math.cos(φ) * Math.cos(λ - sunLngRad);
 
-          // Smooth transition: fully lit > 0, twilight 0 to -0.1, night < -0.1
+          // Wider twilight band for more realistic transition
           let darkness: number;
-          if (cosAngle > 0.05) {
-            darkness = 0; // daytime
-          } else if (cosAngle > -0.12) {
-            // Twilight — smooth cubic transition
-            const t = (0.05 - cosAngle) / 0.17;
+          if (cosAngle > 0.08) {
+            darkness = 0;
+          } else if (cosAngle > -0.15) {
+            const t = (0.08 - cosAngle) / 0.23;
             darkness = t * t * (3 - 2 * t); // smoothstep
           } else {
-            darkness = 1; // night
+            darkness = 1;
           }
 
           samples[sy * sw + sx] = darkness;
         }
       }
 
-      // Bilinear upscale to full res and write pixels
+      // Draw the darkness overlay
+      const imageData = ctx.createImageData(w, h);
+      const data = imageData.data;
+
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
-          // Find sample coords
           const sx = (x / w) * (sw - 1);
           const sy = (y / h) * (sh - 1);
           const sx0 = Math.floor(sx), sy0 = Math.floor(sy);
           const sx1 = Math.min(sx0 + 1, sw - 1), sy1 = Math.min(sy0 + 1, sh - 1);
           const fx = sx - sx0, fy = sy - sy0;
 
-          // Bilinear interpolation
-          const d00 = samples[sy0 * sw + sx0];
-          const d10 = samples[sy0 * sw + sx1];
-          const d01 = samples[sy1 * sw + sx0];
-          const d11 = samples[sy1 * sw + sx1];
-          const d = d00 * (1 - fx) * (1 - fy) + d10 * fx * (1 - fy) + d01 * (1 - fx) * fy + d11 * fx * fy;
+          const d = samples[sy0 * sw + sx0] * (1 - fx) * (1 - fy) +
+                    samples[sy0 * sw + sx1] * fx * (1 - fy) +
+                    samples[sy1 * sw + sx0] * (1 - fx) * fy +
+                    samples[sy1 * sw + sx1] * fx * fy;
 
           const idx = (y * w + x) * 4;
-          // Night: deep navy blue-black tint via multiply blend
-          // multiply: output = overlay * base / 255
-          // So to darken, we output values < 255
-          const brightness = Math.round(255 - d * 110); // night areas get ~57% brightness
-          const blueTint = Math.round(255 - d * 85);    // slightly less blue reduction = blue tint
-
-          data[idx] = brightness;         // R — darker
-          data[idx + 1] = brightness;     // G — darker
-          data[idx + 2] = blueTint;       // B — less dark = blue shift
-          data[idx + 3] = 255;            // A — fully opaque (blend mode handles it)
+          // Deep black-blue night, fully transparent daytime
+          const alpha = d * zoomFade * 0.82; // max 82% opacity for deep night
+          data[idx] = 2;      // R — near black
+          data[idx + 1] = 3;  // G — near black
+          data[idx + 2] = 12; // B — subtle navy tint
+          data[idx + 3] = Math.round(alpha * 255);
         }
       }
 
       ctx.putImageData(imageData, 0, 0);
+
+      // ── City lights: warm glowing dots on the dark side ──
+      ctx.globalCompositeOperation = "screen"; // additive blending for lights
+      for (const city of CITY_LIGHTS) {
+        // Check if this city is on the night side
+        const φc = toRad(city.lat);
+        const λc = toRad(city.lng);
+        const cosSun = Math.sin(sunLatRad) * Math.sin(φc) +
+          Math.cos(sunLatRad) * Math.cos(φc) * Math.cos(λc - sunLngRad);
+        if (cosSun > 0) continue; // dayside — no lights
+
+        // Project city to screen coordinates
+        const cityPx = ((city.lng - camLng) / (fovDeg * 0.5 * (w / h))) * 0.5 + 0.5;
+        const cityPy = ((camLat - city.lat) / (fovDeg * 0.5)) * 0.5 + 0.5;
+        const cx = cityPx * w;
+        const cy = cityPy * h;
+
+        // Skip if off screen
+        if (cx < -50 || cx > w + 50 || cy < -50 || cy > h + 50) continue;
+
+        // Size based on population and zoom
+        const baseSize = Math.sqrt(city.pop) * 1.8;
+        const size = baseSize * Math.max(0.5, Math.min(4, camRange / 8000000));
+
+        // Glow intensity based on how deep into night + zoom fade
+        const nightDepth = Math.min(1, Math.max(0, -cosSun * 5));
+        const intensity = nightDepth * zoomFade;
+        if (intensity < 0.05) continue;
+
+        // Outer glow — warm amber
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 3);
+        grad.addColorStop(0, `rgba(255, 210, 80, ${0.35 * intensity})`);
+        grad.addColorStop(0.3, `rgba(255, 180, 50, ${0.15 * intensity})`);
+        grad.addColorStop(0.7, `rgba(255, 150, 30, ${0.04 * intensity})`);
+        grad.addColorStop(1, "rgba(255, 150, 30, 0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(cx - size * 3, cy - size * 3, size * 6, size * 6);
+
+        // Core bright spot
+        const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.8);
+        core.addColorStop(0, `rgba(255, 240, 180, ${0.6 * intensity})`);
+        core.addColorStop(0.5, `rgba(255, 210, 100, ${0.25 * intensity})`);
+        core.addColorStop(1, "rgba(255, 200, 80, 0)");
+        ctx.fillStyle = core;
+        ctx.fillRect(cx - size, cy - size, size * 2, size * 2);
+      }
+      ctx.globalCompositeOperation = "source-over";
+
       animFrame = requestAnimationFrame(render);
     };
 
