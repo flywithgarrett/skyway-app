@@ -26,36 +26,21 @@ interface MapProps {
 
 /* ── Constants ── */
 const MARKER_SIZE_SELECTED = 52;
-const MARKER_SIZE_GROUND = 36;
-const MARKER_SIZE_GROUND_ZOOMED = 52;
-const MARKER_SIZE_AIRBORNE = 46;
 const ZOOM_CLOSE_RANGE = 200000;   // 200km — airport level
 const ZOOM_CLOSE_2D = 10;
 const NEARBY_AIRPORT_DEG = 1.5;    // ~90nm radius
 const MAX_POSITION_HISTORY = 200;
 const GROUND_SELECT_MAX_RANGE = 5000;
-const GROUND_SHOW_RANGE = 50000;   // 50km — show ground traffic (~zoom 12 equivalent)
 
-/* ── Zoom-based icon sizing (range in meters → pixel size) ── */
-function computeIconSize(range3d: number | null, zoom2d: number | null, isSel: boolean, isGround: boolean): number {
+/* ── Zoom-based icon sizing — simple step function ── */
+function getIconSize(effectiveZoom: number, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  let effectiveZoom: number;
-  if (range3d !== null) {
-    effectiveZoom = Math.max(0, Math.min(20, 22 - Math.log2(range3d / 200)));
-  } else if (zoom2d !== null) {
-    effectiveZoom = zoom2d;
-  } else {
-    return isGround ? MARKER_SIZE_GROUND : MARKER_SIZE_AIRBORNE;
-  }
-  if (isGround) {
-    if (effectiveZoom >= 14) return 52;
-    return 36;
-  }
-  if (effectiveZoom < 5) return 28;
-  if (effectiveZoom < 7) return 34;
-  if (effectiveZoom < 9) return 40;
-  if (effectiveZoom < 12) return 46;
-  return 52;
+  if (isGround) return effectiveZoom >= 14 ? 44 : 36;
+  if (effectiveZoom >= 12) return 44;
+  if (effectiveZoom >= 9) return 38;
+  if (effectiveZoom >= 7) return 32;
+  if (effectiveZoom >= 5) return 28;
+  return 24;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -68,37 +53,48 @@ function isGroundTraffic(f: Flight): boolean {
   return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
 }
 
-/* ── Hard marker cap per zoom level — prevents blob overlap permanently ── */
-const MAX_MARKERS_BY_ZOOM: Record<number, number> = {
-  0: 150, 1: 150, 2: 200, 3: 250, 4: 300, 5: 350,
-  6: 400, 7: 400, 8: 400, 9: 400, 10: 400, 11: 400, 12: 500,
-};
-
-function sampleToLimit(flights: Flight[], effectiveZoom: number): Flight[] {
-  const maxMarkers = MAX_MARKERS_BY_ZOOM[Math.min(Math.round(effectiveZoom), 12)] ?? 400;
-  if (flights.length <= maxMarkers) return flights;
-
-  // Geographic grid sampling: divide world into cells, take evenly from each
-  // Grid resolution adapts to zoom: finer grid at higher zoom
-  const cellSize = effectiveZoom < 5 ? 18 : effectiveZoom < 8 ? 9 : 4;
-  const gridCols = Math.ceil(360 / cellSize);
-  const gridRows = Math.ceil(180 / cellSize);
-  const totalCells = gridCols * gridRows;
-  const perCell = Math.max(1, Math.ceil(maxMarkers / totalCells));
-
-  const grid: Record<string, Flight[]> = {};
-  for (const f of flights) {
-    const cellX = Math.floor((f.currentLng + 180) / cellSize);
-    const cellY = Math.floor((f.currentLat + 90) / cellSize);
-    const key = `${cellX}-${cellY}`;
-    if (!grid[key]) grid[key] = [];
-    if (grid[key].length < perCell) grid[key].push(f);
+/* ── Simple visibility culling: viewport filter + even subsample ── */
+function getVisibleFlights(
+  allFlights: Flight[],
+  effectiveZoom: number,
+  bounds: { north: number; south: number; east: number; west: number } | null,
+): Flight[] {
+  // Globe view (zoom < 5): take every 10th airborne flight for global spread
+  if (effectiveZoom < 5) {
+    const airborne = allFlights.filter(f => !isGroundTraffic(f));
+    return airborne.filter((_, i) => i % 10 === 0);
   }
 
-  const result = Object.values(grid).flat();
-  // If still over limit (many flights in few cells), truncate
-  if (result.length > maxMarkers) return result.slice(0, maxMarkers);
-  return result;
+  // Hide ground traffic at zoom < 12
+  const candidates = effectiveZoom >= 12
+    ? allFlights
+    : allFlights.filter(f => !isGroundTraffic(f));
+
+  // If no bounds available, subsample
+  if (!bounds) {
+    if (candidates.length <= 600) return candidates;
+    const step = Math.ceil(candidates.length / 600);
+    return candidates.filter((_, i) => i % step === 0);
+  }
+
+  // Filter to viewport bounds
+  const inView = candidates.filter(f => {
+    const lat = f.currentLat;
+    const lng = f.currentLng;
+    // Handle wrapping for east/west
+    if (bounds.west <= bounds.east) {
+      return lat >= bounds.south && lat <= bounds.north &&
+             lng >= bounds.west && lng <= bounds.east;
+    }
+    // Wraps around antimeridian
+    return lat >= bounds.south && lat <= bounds.north &&
+           (lng >= bounds.west || lng <= bounds.east);
+  });
+
+  // If too many in viewport, evenly subsample
+  if (inView.length <= 600) return inView;
+  const step = Math.ceil(inView.length / 600);
+  return inView.filter((_, i) => i % step === 0);
 }
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
@@ -327,6 +323,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   const popupRef = useRef<any>(null);
   // Ground aircraft position history for taxi trails
   const posHistoryRef = useRef<Map<string, { lat: number; lng: number; t: number }[]>>(new Map());
+  // Smooth position animation: store previous position + target position per flight
+  const flightAnimRef = useRef<Map<string, { fromLat: number; fromLng: number; toLat: number; toLng: number; startTime: number }>>(new Map());
+  const animFrameRef = useRef<number>(0);
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
   const selectedRef = useRef(selectedFlight);
@@ -387,6 +386,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(animFrameRef.current);
+      flightAnimRef.current.clear();
       markersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       markersRef.current.clear();
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
@@ -876,34 +877,32 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     _latestFlights = flights;
     // Only reject Null Island (0,0) — keep flights at equator or prime meridian
-    const visible = flights.filter((f) => !(f.currentLat === 0 && f.currentLng === 0));
+    const allValid = flights.filter((f) => !(f.currentLat === 0 && f.currentLng === 0));
     const hasSelection = selectedRef.current !== null;
 
     // Track position history for ground aircraft (taxi trails)
     const now = Date.now();
-    for (const f of visible) {
+    for (const f of allValid) {
       if (f.onGround) {
         let history = posHistoryRef.current.get(f.id);
         if (!history) { history = []; posHistoryRef.current.set(f.id, history); }
         const last = history[history.length - 1];
-        // Only add if moved > ~10m or first point
         if (!last || Math.abs(last.lat - f.currentLat) > 0.0001 || Math.abs(last.lng - f.currentLng) > 0.0001) {
           history.push({ lat: f.currentLat, lng: f.currentLng, t: now });
-          // Keep max 200 points (~3 hours at 1-min intervals)
           if (history.length > MAX_POSITION_HISTORY) history.shift();
         }
       }
     }
-    // Prune stale entries (aircraft no longer in feed)
-    const visibleIds = new Set(visible.map(f => f.id));
+    const validIds = new Set(allValid.map(f => f.id));
     for (const [id] of posHistoryRef.current) {
-      if (!visibleIds.has(id)) posHistoryRef.current.delete(id);
+      if (!validIds.has(id)) posHistoryRef.current.delete(id);
     }
+
     const existing = markersRef.current;
     const zoomedIn = isZoomedInRef.current;
     const range3d = is3dRef.current ? cameraRangeRef.current : null;
 
-    // Compute effective zoom for all decisions
+    // Compute effective zoom
     let effectiveZoom: number;
     if (range3d !== null) {
       effectiveZoom = Math.max(0, Math.min(20, 22 - Math.log2(range3d / 200)));
@@ -913,32 +912,51 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       effectiveZoom = 5;
     }
 
-    // Ground traffic: ONLY visible at zoom >= 12 (runway level). Non-negotiable.
-    const showGround = effectiveZoom >= 12;
+    // Get map bounds for viewport culling (2D and 3D where available)
+    let bounds: { north: number; south: number; east: number; west: number } | null = null;
+    try {
+      const b = map.getBounds?.();
+      if (b) {
+        const ne = b.getNorthEast();
+        const sw = b.getSouthWest();
+        bounds = { north: ne.lat(), south: sw.lat(), east: ne.lng(), west: sw.lng() };
+      }
+    } catch { /* 3D map may not have getBounds */ }
 
-    // Step 1: Filter ground traffic when zoomed out
-    let candidates: Flight[];
-    if (showGround) {
-      candidates = visible;
-    } else {
-      candidates = visible.filter(f => !isGroundTraffic(f));
-    }
-
-    // Step 2: Hard cap via geographic grid sampling — no more blobs
-    let renderList = sampleToLimit(candidates, effectiveZoom);
+    // Simple visibility culling: viewport filter + even subsample, NO grid
+    let renderList = getVisibleFlights(allValid, effectiveZoom, bounds);
 
     // Always include selected flight
     if (selectedRef.current && !renderList.find(f => f.id === selectedRef.current?.id)) {
-      const sel = visible.find(f => f.id === selectedRef.current?.id);
+      const sel = allValid.find(f => f.id === selectedRef.current?.id);
       if (sel) renderList.push(sel);
     }
 
-    // Clean up markers not in the current render set
+    // Store animation targets: record from→to for smooth lerp
+    const ANIM_DURATION = 10000; // 10 seconds to glide to new position
+    for (const f of renderList) {
+      const prev = flightAnimRef.current.get(f.id);
+      if (prev) {
+        // Only start new animation if the target changed significantly
+        if (Math.abs(prev.toLat - f.currentLat) > 0.0001 || Math.abs(prev.toLng - f.currentLng) > 0.0001) {
+          // Current interpolated position becomes the new "from"
+          const elapsed = Math.min(1, (now - prev.startTime) / ANIM_DURATION);
+          const curLat = prev.fromLat + (prev.toLat - prev.fromLat) * elapsed;
+          const curLng = prev.fromLng + (prev.toLng - prev.fromLng) * elapsed;
+          flightAnimRef.current.set(f.id, { fromLat: curLat, fromLng: curLng, toLat: f.currentLat, toLng: f.currentLng, startTime: now });
+        }
+      } else {
+        flightAnimRef.current.set(f.id, { fromLat: f.currentLat, fromLng: f.currentLng, toLat: f.currentLat, toLng: f.currentLng, startTime: now });
+      }
+    }
+
+    // Clean up markers + animation state for flights no longer rendered
     const renderIds = new Set(renderList.map((f) => f.id));
     for (const [id, m] of existing) {
       if (!renderIds.has(id)) {
         try { m.remove?.(); m.setMap?.(null); } catch {}
         existing.delete(id);
+        flightAnimRef.current.delete(id);
       }
     }
 
@@ -948,10 +966,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       for (const f of renderList) {
         const isSel = f.id === selectedRef.current?.id;
         const isGround = isGroundTraffic(f);
-
-        // Strict color: WHITE = airborne, ORANGE = ground, CYAN = selected
         const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : getAircraftColor(f);
-        const sz = computeIconSize(range3d, null, isSel, isGround);
+        const sz = getIconSize(effectiveZoom, isSel, isGround);
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
@@ -995,6 +1011,24 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           existing.set(f.id, marker);
         }
       }
+
+      // Start smooth position animation loop for 3D markers
+      cancelAnimationFrame(animFrameRef.current);
+      const animLoop = () => {
+        const t = Date.now();
+        for (const [id, anim] of flightAnimRef.current) {
+          const marker = existing.get(id);
+          if (!marker) continue;
+          const elapsed = Math.min(1, (t - anim.startTime) / ANIM_DURATION);
+          // Smooth ease-out
+          const ease = 1 - Math.pow(1 - elapsed, 2);
+          const lat = anim.fromLat + (anim.toLat - anim.fromLat) * ease;
+          const lng = anim.fromLng + (anim.toLng - anim.fromLng) * ease;
+          try { marker.position = { lat, lng, altitude: 0 }; } catch {}
+        }
+        animFrameRef.current = requestAnimationFrame(animLoop);
+      };
+      animFrameRef.current = requestAnimationFrame(animLoop);
     } else {
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
       const zoom2d = map.getZoom ? map.getZoom() : 15;
@@ -1002,7 +1036,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = isGroundTraffic(f);
         const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : getAircraftColor(f);
-        const sz = computeIconSize(null, zoom2d, isSel, isGround);
+        const sz = getIconSize(zoom2d ?? effectiveZoom, isSel, isGround);
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel || (isGround && zoomedIn));

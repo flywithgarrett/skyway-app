@@ -67,7 +67,7 @@ interface HomeClientProps {
 }
 
 export default function HomeClient({ initialFlights }: HomeClientProps) {
-  const { flights, error: apiError } = useLiveFlights(60000, initialFlights);
+  const { flights, error: apiError } = useLiveFlights(12000, initialFlights);
   const issPosition = useISSPosition(5000);
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
