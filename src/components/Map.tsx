@@ -24,6 +24,19 @@ interface MapProps {
   onHighlightComplete?: () => void;
 }
 
+/* ── Constants ── */
+const MARKER_SIZE_SELECTED = 68;
+const MARKER_SIZE_GROUND = 36;
+const MARKER_SIZE_GROUND_ZOOMED = 52;
+const MARKER_SIZE_AIRBORNE = 56;
+const ZOOM_CLOSE_RANGE = 200000;   // 200km — airport level
+const ZOOM_CLOSE_2D = 10;
+const NEARBY_AIRPORT_DEG = 1.5;    // ~90nm radius
+const MAX_POSITION_HISTORY = 200;
+const GROUND_SELECT_MAX_RANGE = 5000;
+const DAY_NIGHT_FADE_MIN = 300000;  // 300km
+const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
+
 /* ── Major airports ── */
 const MAJOR_AIRPORTS = new Set([
   "ATL","LAX","ORD","DFW","DEN","JFK","SFO","SEA","LAS","MCO",
@@ -54,8 +67,22 @@ function planeSvg(color: string, heading: number, size = 32, glow = false): stri
   </svg>`;
 }
 
+const _svgUrlCache = new Map<string, string>();
 function planeSvgUrl(color: string, heading: number, size = 32, glow = false): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
+  // Round heading to nearest 5° to massively reduce cache misses
+  const roundedHeading = Math.round(heading / 5) * 5;
+  const key = `${color}-${roundedHeading}-${size}-${glow}`;
+  let url = _svgUrlCache.get(key);
+  if (!url) {
+    url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, roundedHeading, size, glow))}`;
+    _svgUrlCache.set(key, url);
+    // Prevent unbounded growth
+    if (_svgUrlCache.size > 2000) {
+      const first = _svgUrlCache.keys().next().value;
+      if (first) _svgUrlCache.delete(first);
+    }
+  }
+  return url;
 }
 
 /* ── Airport marker SVG — pulsing beacon + IATA label (must be pure SVG for 3D markers) ── */
@@ -199,7 +226,7 @@ function getSunPosition(date: Date): { lat: number; lng: number } {
 }
 
 
-const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
+const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
 let scriptPromise: Promise<void> | null = null;
 function loadGoogleMaps(): Promise<void> {
   if (scriptPromise) return scriptPromise;
@@ -217,6 +244,9 @@ function loadGoogleMaps(): Promise<void> {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare const google: any;
+
+/* ── Module-level flight reference (avoids window global mutation) ── */
+let _latestFlights: Flight[] = [];
 
 /* ── Default camera: dark globe view centered on US ── */
 const HOME_CAMERA = { center: { lat: 38, lng: -97, altitude: 0 }, range: 12000000, tilt: 15, heading: 0 };
@@ -403,7 +433,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       const zoom = !is3dRef.current && map.getZoom ? map.getZoom() : null;
 
       // Determine "close" zoom: range < 200km in 3D or zoom > 10 in 2D
-      const isClose = range !== null ? range < 200000 : (zoom !== null && zoom > 10);
+      const isClose = range !== null ? range < ZOOM_CLOSE_RANGE : (zoom !== null && zoom > ZOOM_CLOSE_2D);
       isZoomedInRef.current = isClose;
 
       if (range !== null && Math.abs(range - lastRange) < 500) {
@@ -432,7 +462,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         for (const [code, { airport }] of airportDataRef.current) {
           const dLat = Math.abs(airport.lat - centerLat);
           const dLng = Math.abs(airport.lng - centerLng);
-          if (dLat < 1.5 && dLng < 1.5) {
+          if (dLat < NEARBY_AIRPORT_DEG && dLng < NEARBY_AIRPORT_DEG) {
             nearbyAirports.add(code);
           }
         }
@@ -490,7 +520,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       } catch {}
 
       // Fade out when zoomed in to airport level
-      const zoomFade = Math.max(0, Math.min(1, (camRange - 300000) / 2000000));
+      const zoomFade = Math.max(0, Math.min(1, (camRange - DAY_NIGHT_FADE_MIN) / (DAY_NIGHT_FADE_MAX - DAY_NIGHT_FADE_MIN)));
       if (zoomFade < 0.01) {
         div.style.opacity = "0";
         animFrame = requestAnimationFrame(update);
@@ -670,7 +700,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const map = mapRef.current;
     if (!map) return;
 
-    (window as any).__skyway_flights = flights;
+    _latestFlights = flights;
     const visible = flights.filter((f) => f.currentLat !== 0 && f.currentLng !== 0);
     const hasSelection = selectedRef.current !== null;
 
@@ -685,7 +715,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (!last || Math.abs(last.lat - f.currentLat) > 0.0001 || Math.abs(last.lng - f.currentLng) > 0.0001) {
           history.push({ lat: f.currentLat, lng: f.currentLng, t: now });
           // Keep max 200 points (~3 hours at 1-min intervals)
-          if (history.length > 200) history.shift();
+          if (history.length > MAX_POSITION_HISTORY) history.shift();
         }
       }
     }
@@ -714,7 +744,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
         // Scale up ground aircraft when zoomed into airport level
-        const sz = isSel ? 68 : isGround ? (zoomedIn ? 52 : 36) : 56;
+        const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
@@ -750,7 +780,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             e.stopPropagation();
             if (selectedRef.current?.id === f.id) onSelectRef.current(null);
             else {
-              const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
+              const found = _latestFlights?.find((x: Flight) => x.id === f.id);
               if (found) onSelectRef.current(found);
             }
           });
@@ -764,7 +794,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? 68 : isGround ? (zoomedIn ? 52 : 36) : 56;
+        const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel || (isGround && zoomedIn));
@@ -784,7 +814,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           marker.addListener("click", () => {
             if (selectedRef.current?.id === f.id) onSelectRef.current(null);
             else {
-              const found = (window as any).__skyway_flights?.find((x: Flight) => x.id === f.id);
+              const found = _latestFlights?.find((x: Flight) => x.id === f.id);
               if (found) onSelectRef.current(found);
             }
           });
@@ -844,7 +874,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             map.flyCameraTo({
               endCamera: {
                 center: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 0 },
-                range: Math.min(currentRange, 5000), // Stay close, max 5km
+                range: Math.min(currentRange, GROUND_SELECT_MAX_RANGE),
                 tilt: 60,
                 heading: map.heading ?? 0,
               },
