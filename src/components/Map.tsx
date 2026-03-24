@@ -25,10 +25,10 @@ interface MapProps {
 }
 
 /* ── Constants ── */
-const MARKER_SIZE_SELECTED = 48;
-const MARKER_SIZE_GROUND = 24;
-const MARKER_SIZE_GROUND_ZOOMED = 36;
-const MARKER_SIZE_AIRBORNE = 28;
+const MARKER_SIZE_SELECTED = 68;
+const MARKER_SIZE_GROUND = 36;
+const MARKER_SIZE_GROUND_ZOOMED = 52;
+const MARKER_SIZE_AIRBORNE = 56;
 const ZOOM_CLOSE_RANGE = 200000;   // 200km — airport level
 const ZOOM_CLOSE_2D = 10;
 const NEARBY_AIRPORT_DEG = 1.5;    // ~90nm radius
@@ -52,12 +52,12 @@ function planeSvg(color: string, heading: number, size = 32, glow = false): stri
   const filterId = glow ? "pg" : "ps";
   const filter = glow
     ? `<filter id="${filterId}" x="-80%" y="-80%" width="260%" height="260%">
-        <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="${color}" flood-opacity="0.8"/>
-        <feDropShadow dx="0" dy="0" stdDeviation="1.5" flood-color="#fff" flood-opacity="0.5"/>
+        <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="${color}" flood-opacity="1"/>
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.7"/>
       </filter>`
-    : `<filter id="${filterId}" x="-40%" y="-40%" width="180%" height="180%">
-        <feDropShadow dx="0" dy="0" stdDeviation="1" flood-color="#fff" flood-opacity="0.5"/>
-        <feDropShadow dx="0" dy="0.5" stdDeviation="1" flood-color="#000" flood-opacity="0.7"/>
+    : `<filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
+        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.8"/>
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.9"/>
       </filter>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
     <defs>${filter}</defs>
@@ -336,7 +336,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   /* ══ Track zoom level for ground traffic scaling ══ */
   const isZoomedInRef = useRef(false);
   const cameraRangeRef = useRef(12000000);
-  const updateFlightsRef = useRef<(() => void) | null>(null);
 
   /* ══ Airport pulsing beacon markers ══ */
   const airportPulsingRef = useRef<Set<string>>(new Set());
@@ -429,11 +428,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     let animFrame: number | null = null;
     let lastRange = -1;
-    let lastZoomBracket = -1;
-
-    const getZoomBracket = (r: number) =>
-      r > 8000000 ? 0 : r > 4000000 ? 1 : r > 2000000 ? 2 : r > 1000000 ? 3 : r > 500000 ? 4 : 5;
-
     const checkZoom = () => {
       const range = is3dRef.current ? (map.range ?? 40000000) : null;
       const zoom = !is3dRef.current && map.getZoom ? map.getZoom() : null;
@@ -442,15 +436,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       // Determine "close" zoom: range < 200km in 3D or zoom > 10 in 2D
       const isClose = range !== null ? range < ZOOM_CLOSE_RANGE : (zoom !== null && zoom > ZOOM_CLOSE_2D);
       isZoomedInRef.current = isClose;
-
-      // Re-render flight markers when zoom bracket changes (for dynamic sizing)
-      if (range !== null) {
-        const bracket = getZoomBracket(range);
-        if (bracket !== lastZoomBracket && lastZoomBracket !== -1) {
-          updateFlightsRef.current?.();
-        }
-        lastZoomBracket = bracket;
-      }
 
       if (range !== null && Math.abs(range - lastRange) < 500) {
         animFrame = requestAnimationFrame(checkZoom);
@@ -863,29 +848,17 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (is3dRef.current) {
       const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
 
-      // Dynamic sizing based on camera range (altitude)
-      const range = cameraRangeRef.current;
-      // Globe view (~12M+): tiny icons. Mid zoom (~2M): medium. Airport (<200k): large.
-      const zoomScale = range > 8000000 ? 0.35
-        : range > 4000000 ? 0.45
-        : range > 2000000 ? 0.55
-        : range > 1000000 ? 0.7
-        : range > 500000 ? 0.85
-        : 1.0;
-
       for (const f of visible) {
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        // Dynamic sizing: base sizes scaled by zoom level
-        const baseSz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
-        const sz = Math.round(isSel ? baseSz : baseSz * zoomScale);
+        const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
 
-        // Use actual altitude for airborne flights so they separate vertically
-        const altMeters = isGround ? 0 : f.altitude * 0.3048; // feet to meters
+        // Airborne flights at real altitude so they spread vertically instead of clumping
+        const altMeters = isGround ? 0 : f.altitude * 0.3048;
         const altMode = isGround ? "CLAMP_TO_GROUND" : "ABSOLUTE";
 
         const mkIcon = () => {
@@ -911,7 +884,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           const marker = new Marker3DInteractiveElement({
             position: { lat: f.currentLat, lng: f.currentLng, altitude: altMeters },
             altitudeMode: altMode,
-            collisionBehavior: "OPTIONAL_AND_HIDES_LOWER_PRIORITY",
+            collisionBehavior: "REQUIRED",
             zIndex: Math.round(f.altitude),
           });
           marker.append(mkIcon());
@@ -962,9 +935,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     }
   }, [flights]);
-
-  // Keep ref in sync so zoom loop can trigger re-render
-  updateFlightsRef.current = updateFlights;
 
   useEffect(() => {
     if (!mapReady) return;
