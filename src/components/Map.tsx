@@ -229,6 +229,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   const issMarkerRef = useRef<any>(null);
   const routeRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
+  // Ground aircraft position history for taxi trails
+  const posHistoryRef = useRef<Map<string, { lat: number; lng: number; t: number }[]>>(new Map());
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
   const selectedRef = useRef(selectedFlight);
@@ -730,6 +732,27 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     (window as any).__skyway_flights = flights;
     const visible = flights.filter((f) => f.currentLat !== 0 && f.currentLng !== 0);
     const hasSelection = selectedRef.current !== null;
+
+    // Track position history for ground aircraft (taxi trails)
+    const now = Date.now();
+    for (const f of visible) {
+      if (f.onGround) {
+        let history = posHistoryRef.current.get(f.id);
+        if (!history) { history = []; posHistoryRef.current.set(f.id, history); }
+        const last = history[history.length - 1];
+        // Only add if moved > ~10m or first point
+        if (!last || Math.abs(last.lat - f.currentLat) > 0.0001 || Math.abs(last.lng - f.currentLng) > 0.0001) {
+          history.push({ lat: f.currentLat, lng: f.currentLng, t: now });
+          // Keep max 200 points (~3 hours at 1-min intervals)
+          if (history.length > 200) history.shift();
+        }
+      }
+    }
+    // Prune stale entries (aircraft no longer in feed)
+    const visibleIds = new Set(visible.map(f => f.id));
+    for (const [id] of posHistoryRef.current) {
+      if (!visibleIds.has(id)) posHistoryRef.current.delete(id);
+    }
     const currentIds = new Set(visible.map((f) => f.id));
     const existing = markersRef.current;
 
@@ -858,16 +881,107 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       return;
     }
 
+    const isGround = selectedFlight.onGround;
+
+    // ── Ground aircraft: stay zoomed in, show taxi trail ──
+    if (isGround) {
+      (async () => {
+        if (is3dRef.current) {
+          // Save camera but DON'T zoom out — stay at airport level
+          if (!prevCameraRef.current) {
+            prevCameraRef.current = {
+              center: map.center ? { lat: map.center.lat, lng: map.center.lng, altitude: map.center.altitude || 0 } : HOME_CAMERA.center,
+              range: map.range || HOME_CAMERA.range,
+              tilt: map.tilt ?? HOME_CAMERA.tilt,
+              heading: map.heading ?? HOME_CAMERA.heading,
+            };
+          }
+
+          // Gentle pan to the aircraft at airport surface level
+          const currentRange = map.range || 15000;
+          if (map.flyCameraTo) {
+            map.flyCameraTo({
+              endCamera: {
+                center: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 0 },
+                range: Math.min(currentRange, 5000), // Stay close, max 5km
+                tilt: 60,
+                heading: map.heading ?? 0,
+              },
+              durationMillis: 1200,
+            });
+          }
+
+          // Draw taxi trail from position history
+          const history = posHistoryRef.current.get(selectedFlight.id);
+          if (history && history.length >= 2) {
+            const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
+            const trailCoords = history.map(p => ({ lat: p.lat, lng: p.lng, altitude: 2 }));
+            // Add current position
+            trailCoords.push({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 2 });
+
+            // Outer glow — amber
+            const glowTrail = new Polyline3DElement({
+              altitudeMode: "RELATIVE_TO_GROUND",
+              strokeColor: "rgba(251, 191, 36, 0.15)",
+              strokeWidth: 14,
+              coordinates: trailCoords,
+              drawsOccludedSegments: true,
+            });
+            map.append(glowTrail);
+            routeRef.current.push(glowTrail);
+
+            // Core trail — bright amber
+            const coreTrail = new Polyline3DElement({
+              altitudeMode: "RELATIVE_TO_GROUND",
+              strokeColor: "rgba(251, 191, 36, 0.7)",
+              strokeWidth: 4,
+              coordinates: trailCoords,
+              drawsOccludedSegments: true,
+            });
+            map.append(coreTrail);
+            routeRef.current.push(coreTrail);
+
+            // Inner hot center
+            const hotTrail = new Polyline3DElement({
+              altitudeMode: "RELATIVE_TO_GROUND",
+              strokeColor: "rgba(255, 255, 255, 0.35)",
+              strokeWidth: 1.5,
+              coordinates: trailCoords,
+              drawsOccludedSegments: true,
+            });
+            map.append(hotTrail);
+            routeRef.current.push(hotTrail);
+          }
+
+          // Info label
+          const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+          const label = `${selectedFlight.flightNumber} · ${selectedFlight.aircraft || ""}\nTaxiing · ${selectedFlight.speed} kts · HDG ${selectedFlight.heading}°`;
+          const popupMarker = new Marker3DElement({
+            position: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 50 },
+            altitudeMode: "RELATIVE_TO_GROUND", collisionBehavior: "REQUIRED", zIndex: 10000,
+            label: label,
+          });
+          map.append(popupMarker);
+          popupRef.current = popupMarker;
+
+        } else {
+          // 2D: just pan
+          map.panTo({ lat: selectedFlight.currentLat, lng: selectedFlight.currentLng });
+        }
+      })();
+      return;
+    }
+
+    // ── Airborne aircraft: zoom out to show full route ──
     const { origin, destination } = selectedFlight;
     let hasOrig = origin.lat !== 0 || origin.lng !== 0;
     let hasDest = destination.lat !== 0 || destination.lng !== 0;
 
-    // If no origin/dest coords, project a line based on heading
     const projectedOrig = { lat: 0, lng: 0 };
     const projectedDest = { lat: 0, lng: 0 };
     if (!hasOrig || !hasDest) {
       const headRad = (selectedFlight.heading * Math.PI) / 180;
-      const dist = 8; // degrees (~500nm)
+      const dist = 8;
       if (!hasOrig) {
         projectedOrig.lat = selectedFlight.currentLat - Math.cos(headRad) * dist;
         projectedOrig.lng = selectedFlight.currentLng - Math.sin(headRad) * dist;
@@ -886,7 +1000,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     (async () => {
       if (is3dRef.current) {
-        // Save current camera before flying
         if (!prevCameraRef.current) {
           prevCameraRef.current = {
             center: map.center ? { lat: map.center.lat, lng: map.center.lng, altitude: map.center.altitude || 0 } : HOME_CAMERA.center,
@@ -896,14 +1009,13 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           };
         }
 
-        // Fly to aircraft — heading 0 (north-up) so it doesn't twist
         if (map.flyCameraTo) {
           map.flyCameraTo({
             endCamera: {
               center: { lat: selectedFlight.currentLat, lng: selectedFlight.currentLng, altitude: 0 },
               range: 1500000,
               tilt: 45,
-              heading: 0,  // Always north-up to prevent disorientation
+              heading: 0,
             },
             durationMillis: 2000,
           });
