@@ -189,78 +189,13 @@ function gcPoints(lat1: number, lng1: number, lat2: number, lng2: number, n: num
 }
 
 /* ── Script loader ── */
-/* ── Solar position & day/night terminator ── */
+/* ── Solar position for day/night overlay ── */
 function getSunPosition(date: Date): { lat: number; lng: number } {
   const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
   const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
   const hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
   const lng = (12 - hours) * 15;
   return { lat: declination, lng: lng > 180 ? lng - 360 : lng < -180 ? lng + 360 : lng };
-}
-
-function getTerminatorPoints(sunLat: number, sunLng: number, numPoints: number): { lat: number; lng: number }[] {
-  const toRad = (d: number) => d * Math.PI / 180;
-  const toDeg = (r: number) => r * 180 / Math.PI;
-  const φs = toRad(sunLat);
-  const λs = toRad(sunLng);
-
-  const points: { lat: number; lng: number }[] = [];
-  for (let i = 0; i <= numPoints; i++) {
-    const bearing = (2 * Math.PI * i) / numPoints;
-    const φ = Math.asin(
-      Math.sin(φs) * Math.cos(Math.PI / 2) +
-      Math.cos(φs) * Math.sin(Math.PI / 2) * Math.cos(bearing)
-    );
-    const λ = λs + Math.atan2(
-      Math.sin(bearing) * Math.sin(Math.PI / 2) * Math.cos(φs),
-      Math.cos(Math.PI / 2) - Math.sin(φs) * Math.sin(φ)
-    );
-    let lngDeg = toDeg(λ);
-    if (lngDeg > 180) lngDeg -= 360;
-    if (lngDeg < -180) lngDeg += 360;
-    points.push({ lat: toDeg(φ), lng: lngDeg });
-  }
-  return points;
-}
-
-// Build small rectangular strips on the night side for safe rendering
-// (Polygon3DElement can't handle globe-wrapping polygons reliably)
-function getNightStrips(sunLat: number, sunLng: number): { lat: number; lng: number }[][] {
-  const toRad = (d: number) => d * Math.PI / 180;
-  const toDeg = (r: number) => r * 180 / Math.PI;
-  const φs = toRad(sunLat);
-  const λs = toRad(sunLng);
-  const antiSunLng = sunLng > 0 ? sunLng - 180 : sunLng + 180;
-
-  const strips: { lat: number; lng: number }[][] = [];
-  const latStep = 15;
-  const lngStep = 15;
-
-  // For each latitude band, check if each cell is on the night side
-  for (let lat = -90; lat < 90; lat += latStep) {
-    for (let lng = -180; lng < 180; lng += lngStep) {
-      const cellCenterLat = lat + latStep / 2;
-      const cellCenterLng = lng + lngStep / 2;
-
-      // Calculate angular distance from sun
-      const φ = toRad(cellCenterLat);
-      const λ = toRad(cellCenterLng);
-      const cosAngle = Math.sin(φs) * Math.sin(φ) + Math.cos(φs) * Math.cos(φ) * Math.cos(λ - λs);
-      const angleDeg = toDeg(Math.acos(Math.max(-1, Math.min(1, cosAngle))));
-
-      // Night side: > 90° from sun, skip cells near terminator for softer edge
-      if (angleDeg > 96) {
-        // Deep night
-        strips.push([
-          { lat, lng },
-          { lat, lng: lng + lngStep },
-          { lat: lat + latStep, lng: lng + lngStep },
-          { lat: lat + latStep, lng },
-        ]);
-      }
-    }
-  }
-  return strips;
 }
 
 const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
@@ -293,7 +228,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   const airportMarkersRef = useRef<any[]>([]);
   const issMarkerRef = useRef<any>(null);
   const routeRef = useRef<any[]>([]);
-  const dayNightRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
@@ -360,8 +294,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
       if (issMarkerRef.current) { try { issMarkerRef.current.remove?.(); issMarkerRef.current.setMap?.(null); } catch {} issMarkerRef.current = null; }
-      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
-      dayNightRef.current = [];
       if (containerRef.current) try { containerRef.current.innerHTML = ""; } catch {}
       mapRef.current = null;
       setMapReady(false);
@@ -523,82 +455,153 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => { if (animFrame) cancelAnimationFrame(animFrame); };
   }, [mapReady, updateAirportPulse]);
 
-  /* ══ Day/Night terminator — real-time sun position ══ */
+  /* ══ Day/Night — canvas overlay with smooth terminator ══ */
+  const dayNightCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map || !is3dRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Create canvas overlay
+    let canvas = dayNightCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;mix-blend-mode:multiply;";
+      container.parentElement?.appendChild(canvas);
+      dayNightCanvasRef.current = canvas;
+    }
+
+    let animFrame: number | null = null;
     let cancelled = false;
 
-    const drawTerminator = async () => {
-      // Clean previous
-      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
-      dayNightRef.current = [];
-      if (cancelled) return;
+    const toRad = (d: number) => d * Math.PI / 180;
 
-      const { Polygon3DElement } = await google.maps.importLibrary("maps3d");
-      const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
-      if (cancelled) return;
+    const render = () => {
+      if (cancelled || !canvas) return;
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
       const now = new Date();
       const sun = getSunPosition(now);
+      const sunLatRad = toRad(sun.lat);
+      const sunLngRad = toRad(sun.lng);
 
-      // Night shadow — many small rectangular strips (safe for 3D globe)
-      const strips = getNightStrips(sun.lat, sun.lng);
-      for (const strip of strips) {
-        const coords = strip.map(p => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
-        coords.push(coords[0]); // close
-        const poly = new Polygon3DElement({
-          altitudeMode: "CLAMP_TO_GROUND",
-          fillColor: "rgba(0, 2, 12, 0.42)",
-          strokeColor: "rgba(0, 0, 0, 0)",
-          strokeWidth: 0,
-          outerCoordinates: coords,
-          drawsOccludedSegments: true,
-          zIndex: 1,
-        });
-        map.append(poly);
-        dayNightRef.current.push(poly);
+      // Get camera center from the 3D map
+      let camLat = 38, camLng = -97, camRange = 12000000;
+      try {
+        if (map.center) {
+          camLat = typeof map.center.lat === "function" ? map.center.lat() : (map.center.lat ?? 38);
+          camLng = typeof map.center.lng === "function" ? map.center.lng() : (map.center.lng ?? -97);
+        }
+        camRange = map.range ?? 12000000;
+      } catch {}
+
+      // How far we see (in degrees) — approximation from camera range
+      const fovDeg = Math.min(180, (camRange / 111320) * 0.8);
+
+      // For each pixel column, compute the longitude
+      // For each pixel row, compute the latitude
+      // Then compute solar elevation angle → darkness
+
+      // Create image data for pixel manipulation
+      const imageData = ctx.createImageData(w, h);
+      const data = imageData.data;
+
+      // Sampling at quarter resolution for performance, then scale
+      const step = 4;
+      const sw = Math.ceil(w / step);
+      const sh = Math.ceil(h / step);
+
+      // Compute darkness values at sample points
+      const samples = new Float32Array(sw * sh);
+
+      for (let sy = 0; sy < sh; sy++) {
+        for (let sx = 0; sx < sw; sx++) {
+          // Map pixel to lat/lng based on camera view
+          const px = (sx / sw - 0.5) * 2; // -1 to 1
+          const py = (sy / sh - 0.5) * 2; // -1 to 1
+
+          const lat = camLat - py * fovDeg * 0.5;
+          const lng = camLng + px * fovDeg * 0.5 * (w / h);
+
+          if (lat < -90 || lat > 90) { samples[sy * sw + sx] = 0; continue; }
+
+          // Solar angle: dot product of surface normal and sun direction
+          const φ = toRad(lat);
+          const λ = toRad(lng);
+          const cosAngle = Math.sin(sunLatRad) * Math.sin(φ) +
+            Math.cos(sunLatRad) * Math.cos(φ) * Math.cos(λ - sunLngRad);
+
+          // Smooth transition: fully lit > 0, twilight 0 to -0.1, night < -0.1
+          let darkness: number;
+          if (cosAngle > 0.05) {
+            darkness = 0; // daytime
+          } else if (cosAngle > -0.12) {
+            // Twilight — smooth cubic transition
+            const t = (0.05 - cosAngle) / 0.17;
+            darkness = t * t * (3 - 2 * t); // smoothstep
+          } else {
+            darkness = 1; // night
+          }
+
+          samples[sy * sw + sx] = darkness;
+        }
       }
 
-      // Terminator line — the day/night boundary
-      const terminatorPts = getTerminatorPoints(sun.lat, sun.lng, 120);
-      // Sort by longitude for a clean line
-      const sorted = [...terminatorPts].sort((a, b) => a.lng - b.lng);
-      const lineCoords = sorted.map(p => ({ lat: p.lat, lng: p.lng, altitude: 200 }));
+      // Bilinear upscale to full res and write pixels
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          // Find sample coords
+          const sx = (x / w) * (sw - 1);
+          const sy = (y / h) * (sh - 1);
+          const sx0 = Math.floor(sx), sy0 = Math.floor(sy);
+          const sx1 = Math.min(sx0 + 1, sw - 1), sy1 = Math.min(sy0 + 1, sh - 1);
+          const fx = sx - sx0, fy = sy - sy0;
 
-      // Soft amber outer glow
-      const glow = new Polyline3DElement({
-        altitudeMode: "ABSOLUTE",
-        strokeColor: "rgba(255, 170, 50, 0.06)",
-        strokeWidth: 40,
-        coordinates: lineCoords,
-        drawsOccludedSegments: true,
-      });
-      map.append(glow);
-      dayNightRef.current.push(glow);
+          // Bilinear interpolation
+          const d00 = samples[sy0 * sw + sx0];
+          const d10 = samples[sy0 * sw + sx1];
+          const d01 = samples[sy1 * sw + sx0];
+          const d11 = samples[sy1 * sw + sx1];
+          const d = d00 * (1 - fx) * (1 - fy) + d10 * fx * (1 - fy) + d01 * (1 - fx) * fy + d11 * fx * fy;
 
-      // Core terminator line
-      const line = new Polyline3DElement({
-        altitudeMode: "ABSOLUTE",
-        strokeColor: "rgba(255, 200, 100, 0.18)",
-        strokeWidth: 3,
-        coordinates: lineCoords,
-        drawsOccludedSegments: true,
-      });
-      map.append(line);
-      dayNightRef.current.push(line);
+          const idx = (y * w + x) * 4;
+          // Night: deep navy blue-black tint via multiply blend
+          // multiply: output = overlay * base / 255
+          // So to darken, we output values < 255
+          const brightness = Math.round(255 - d * 110); // night areas get ~57% brightness
+          const blueTint = Math.round(255 - d * 85);    // slightly less blue reduction = blue tint
+
+          data[idx] = brightness;         // R — darker
+          data[idx + 1] = brightness;     // G — darker
+          data[idx + 2] = blueTint;       // B — less dark = blue shift
+          data[idx + 3] = 255;            // A — fully opaque (blend mode handles it)
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      animFrame = requestAnimationFrame(render);
     };
 
-    drawTerminator();
-    // Update every 60 seconds
-    const interval = setInterval(drawTerminator, 60000);
+    animFrame = requestAnimationFrame(render);
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
-      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
-      dayNightRef.current = [];
+      if (animFrame) cancelAnimationFrame(animFrame);
+      if (canvas && canvas.parentElement) {
+        canvas.parentElement.removeChild(canvas);
+      }
+      dayNightCanvasRef.current = null;
     };
   }, [mapReady]);
 
