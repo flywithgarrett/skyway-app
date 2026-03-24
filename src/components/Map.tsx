@@ -459,26 +459,14 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   }, [mapReady, updateAirportPulse]);
 
   /* ══ Day/Night — screen-space gradient overlay ══ */
-  // Uses a CSS gradient div positioned over the map.
-  // Computes the sun's direction relative to camera center,
-  // then draws a linear gradient from day→night across the screen
-  // aligned to the terminator direction. No per-pixel computation.
   const dayNightDivRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map || !is3dRef.current) return;
-    const container = containerRef.current;
-    if (!container) return;
-
-    let div = dayNightDivRef.current;
-    if (!div) {
-      div = document.createElement("div");
-      div.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:1;transition:opacity 0.5s;";
-      container.parentElement?.appendChild(div);
-      dayNightDivRef.current = div;
-    }
+    const div = dayNightDivRef.current;
+    if (!div) return;
 
     let animFrame: number | null = null;
     let cancelled = false;
@@ -556,8 +544,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => {
       cancelled = true;
       if (animFrame) cancelAnimationFrame(animFrame);
-      if (div && div.parentElement) div.parentElement.removeChild(div);
-      dayNightDivRef.current = null;
+      if (div) { div.style.background = "none"; div.style.opacity = "0"; }
     };
   }, [mapReady]);
 
@@ -1195,6 +1182,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         }
       `}</style>
       <div ref={containerRef} className="absolute inset-0 z-0 skyway-map-container" />
+      <div ref={dayNightDivRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }} />
     </>
   );
 }
