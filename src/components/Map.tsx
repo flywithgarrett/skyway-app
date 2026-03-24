@@ -857,10 +857,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
 
-        // Airborne flights at real altitude so they spread vertically instead of clumping
-        const altMeters = isGround ? 0 : f.altitude * 0.3048;
-        const altMode = isGround ? "CLAMP_TO_GROUND" : "ABSOLUTE";
-
         const mkIcon = () => {
           const tpl = document.createElement("template");
           const img = document.createElement("img");
@@ -875,16 +871,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
         const em = existing.get(f.id);
         if (em) {
-          em.position = { lat: f.currentLat, lng: f.currentLng, altitude: altMeters };
-          em.altitudeMode = altMode;
+          em.position = { lat: f.currentLat, lng: f.currentLng, altitude: 0 };
           while (em.firstChild) em.removeChild(em.firstChild);
           em.append(mkIcon());
           em.zIndex = isSel ? 9999 : Math.round(f.altitude);
         } else {
           const marker = new Marker3DInteractiveElement({
-            position: { lat: f.currentLat, lng: f.currentLng, altitude: altMeters },
-            altitudeMode: altMode,
+            position: { lat: f.currentLat, lng: f.currentLng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
             collisionBehavior: "REQUIRED",
+            drawsWhenOccluded: true,
             zIndex: Math.round(f.altitude),
           });
           marker.append(mkIcon());
