@@ -13,8 +13,8 @@ function transformStateVector(sv: any[]): Flight | null {
   const lat = sv[6];
   const lng = sv[5];
   if (lat == null || lng == null) return null;
-  if (sv[8] === true) return null;
 
+  const isOnGround = sv[8] === true;
   const callsign = (sv[1] || "").trim();
   const airline = lookupAirline(callsign);
   const speedKts = sv[9] != null ? Math.round(sv[9] * 1.94384) : 0;
@@ -28,14 +28,14 @@ function transformStateVector(sv: any[]): Flight | null {
     flightNumber: callsign || sv[0] || "???",
     callsign, airline,
     origin: { ...UNKNOWN_AIRPORT }, destination: { ...UNKNOWN_AIRPORT },
-    status: "en-route",
+    status: isOnGround ? "taxiing" : "en-route",
     scheduledDep: null, actualDep: null,
     scheduledArr: null, estimatedArr: null, actualArr: null,
     aircraft: null, registration: null,
     altitude: altFt, speed: speedKts, heading, progress: 0,
     currentLat: lat, currentLng: lng,
     originCountry: sv[2] || "",
-    onGround: false, verticalRate: vertRate,
+    onGround: isOnGround, verticalRate: vertRate,
     squawk: sv[14] || null, geoAltitude: geoAltFt,
     lastContact: sv[4] || Math.floor(Date.now() / 1000),
     routeDistance: null,
@@ -49,7 +49,7 @@ function transformADSBxAircraft(ac: any): Flight | null {
   const lng = ac.lon;
   if (lat == null || lng == null) return null;
   const altRaw = ac.alt_baro;
-  if (altRaw === "ground" || altRaw === 0) return null;
+  const isOnGround = altRaw === "ground" || ac.ground === true || altRaw === 0;
   const altFt = typeof altRaw === "number" ? altRaw : 0;
 
   const callsign = (ac.flight || "").trim();
@@ -61,7 +61,7 @@ function transformADSBxAircraft(ac: any): Flight | null {
     flightNumber: callsign || hex || "???",
     callsign, airline,
     origin: { ...UNKNOWN_AIRPORT }, destination: { ...UNKNOWN_AIRPORT },
-    status: "en-route",
+    status: isOnGround ? "taxiing" : "en-route",
     scheduledDep: null, actualDep: null,
     scheduledArr: null, estimatedArr: null, actualArr: null,
     aircraft: ac.t || null, registration: ac.r || null,
@@ -71,7 +71,7 @@ function transformADSBxAircraft(ac: any): Flight | null {
     progress: 0,
     currentLat: lat, currentLng: lng,
     originCountry: "",
-    onGround: false,
+    onGround: isOnGround,
     verticalRate: ac.baro_rate != null ? Math.round(ac.baro_rate) : null,
     squawk: ac.squawk || null,
     geoAltitude: ac.alt_geom || altFt,
@@ -128,7 +128,9 @@ async function fetchAirplanesLive(): Promise<FetchResult> {
     for (const ac of result.value) {
       if (allFlights.length >= MAX_FLIGHTS) break;
       const mapped = transformADSBxAircraft(ac);
-      if (!mapped || mapped.altitude < 1000) continue;
+      if (!mapped) continue;
+      // Keep ground traffic (onGround) + airborne above 1000ft
+      if (!mapped.onGround && mapped.altitude < 1000) continue;
       if (seen.has(mapped.id)) continue;
       seen.add(mapped.id);
       allFlights.push(mapped);
@@ -160,7 +162,8 @@ async function fetchGlobalSource(source: { name: string; url: string }): Promise
   for (const sv of states) {
     if (flights.length >= MAX_FLIGHTS) break;
     const mapped = transformStateVector(sv);
-    if (!mapped || mapped.altitude < 1000) continue;
+    if (!mapped) continue;
+    if (!mapped.onGround && mapped.altitude < 1000) continue;
     flights.push(mapped);
   }
   if (flights.length < 500) throw new Error(`Only ${flights.length} flights`);
