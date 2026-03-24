@@ -189,6 +189,84 @@ function gcPoints(lat1: number, lng1: number, lat2: number, lng2: number, n: num
 }
 
 /* ── Script loader ── */
+/* ── Solar position & day/night terminator ── */
+function getSunPosition(date: Date): { lat: number; lng: number } {
+  // Simplified solar declination + hour angle → subsolar point
+  const dayOfYear = Math.floor((date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000);
+  // Solar declination (approximate)
+  const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+  // Hour angle: sun is directly overhead at solar noon (12:00 UTC at 0° longitude)
+  const hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+  const lng = (12 - hours) * 15; // 15° per hour, noon = 0° longitude
+  return { lat: declination, lng: lng > 180 ? lng - 360 : lng < -180 ? lng + 360 : lng };
+}
+
+function getTerminatorPoints(sunLat: number, sunLng: number, numPoints: number, offset = 0): { lat: number; lng: number }[] {
+  // The terminator is the great circle 90° from the subsolar point
+  // offset: 0 = terminator, positive = into night side (for twilight bands)
+  const toRad = (d: number) => d * Math.PI / 180;
+  const toDeg = (r: number) => r * 180 / Math.PI;
+  const φs = toRad(sunLat);
+  const λs = toRad(sunLng);
+  const angularRadius = toRad(90 + offset); // 90° = terminator, >90 = twilight
+
+  const points: { lat: number; lng: number }[] = [];
+  for (let i = 0; i <= numPoints; i++) {
+    const bearing = (2 * Math.PI * i) / numPoints;
+    const φ = Math.asin(
+      Math.sin(φs) * Math.cos(angularRadius) +
+      Math.cos(φs) * Math.sin(angularRadius) * Math.cos(bearing)
+    );
+    const λ = λs + Math.atan2(
+      Math.sin(bearing) * Math.sin(angularRadius) * Math.cos(φs),
+      Math.cos(angularRadius) - Math.sin(φs) * Math.sin(φ)
+    );
+    let lngDeg = toDeg(λ);
+    if (lngDeg > 180) lngDeg -= 360;
+    if (lngDeg < -180) lngDeg += 360;
+    points.push({ lat: toDeg(φ), lng: lngDeg });
+  }
+  return points;
+}
+
+// Build a closed polygon covering the night side of Earth
+function getNightPolygon(sunLat: number, sunLng: number, numPoints = 72): { lat: number; lng: number }[] {
+  const terminator = getTerminatorPoints(sunLat, sunLng, numPoints);
+  // The anti-solar point (center of night)
+  const nightLat = -sunLat;
+  const nightLng = sunLng > 0 ? sunLng - 180 : sunLng + 180;
+
+  // We need to determine which side of the terminator is night.
+  // Sort terminator points by longitude for a clean polygon,
+  // then cap with the pole on the night side.
+  // Simpler approach: create a polygon that traces the terminator
+  // and then goes around the night-side pole.
+
+  // Determine if north pole is on night side
+  const northPoleToSun = Math.acos(Math.sin(sunLat * Math.PI / 180)) * 180 / Math.PI;
+  const northIsNight = northPoleToSun > 90;
+  const capLat = northIsNight ? 90 : -90;
+
+  // Sort terminator points by longitude
+  const sorted = [...terminator].sort((a, b) => a.lng - b.lng);
+
+  // Build night polygon: trace terminator east, then cap at the pole
+  const poly: { lat: number; lng: number }[] = [];
+
+  // Add terminator points sorted by longitude
+  for (const p of sorted) {
+    poly.push(p);
+  }
+
+  // Close via the night-side pole
+  // Go from the eastern end of terminator → pole → back to western end
+  poly.push({ lat: capLat, lng: 180 });
+  poly.push({ lat: capLat, lng: -180 });
+  poly.push(sorted[0]); // close
+
+  return poly;
+}
+
 const API_KEY = "AIzaSyD4zUAl2Ox3sqe2w7izi_OkFT6C-P3yBhU";
 let scriptPromise: Promise<void> | null = null;
 function loadGoogleMaps(): Promise<void> {
@@ -219,6 +297,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   const airportMarkersRef = useRef<any[]>([]);
   const issMarkerRef = useRef<any>(null);
   const routeRef = useRef<any[]>([]);
+  const dayNightRef = useRef<any[]>([]);
   const popupRef = useRef<any>(null);
   const onSelectRef = useRef(onSelectFlight);
   onSelectRef.current = onSelectFlight;
@@ -285,6 +364,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
       if (issMarkerRef.current) { try { issMarkerRef.current.remove?.(); issMarkerRef.current.setMap?.(null); } catch {} issMarkerRef.current = null; }
+      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
+      dayNightRef.current = [];
       if (containerRef.current) try { containerRef.current.innerHTML = ""; } catch {}
       mapRef.current = null;
       setMapReady(false);
@@ -445,6 +526,112 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     animFrame = requestAnimationFrame(checkZoom);
     return () => { if (animFrame) cancelAnimationFrame(animFrame); };
   }, [mapReady, updateAirportPulse]);
+
+  /* ══ Day/Night terminator — real-time sun position ══ */
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map || !is3dRef.current) return;
+    let cancelled = false;
+
+    const drawTerminator = async () => {
+      // Clean previous
+      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
+      dayNightRef.current = [];
+      if (cancelled) return;
+
+      const { Polygon3DElement } = await google.maps.importLibrary("maps3d");
+      if (cancelled) return;
+
+      const now = new Date();
+      const sun = getSunPosition(now);
+      const nightPoly = getNightPolygon(sun.lat, sun.lng, 120);
+
+      // Convert to altitude-0 coords
+      const nightCoords = nightPoly.map(p => ({ lat: p.lat, lng: p.lng, altitude: 0 }));
+
+      // Main night shadow — dark overlay
+      const nightOverlay = new Polygon3DElement({
+        altitudeMode: "CLAMP_TO_GROUND",
+        fillColor: "rgba(0, 3, 15, 0.45)",
+        strokeColor: "rgba(0, 0, 0, 0)",
+        strokeWidth: 0,
+        outerCoordinates: nightCoords,
+        drawsOccludedSegments: true,
+        zIndex: 1,
+      });
+      map.append(nightOverlay);
+      dayNightRef.current.push(nightOverlay);
+
+      // Civil twilight band (6° offset) — subtle transition
+      const twilightPoints = getTerminatorPoints(sun.lat, sun.lng, 120, -6);
+      const twilightSorted = [...twilightPoints].sort((a, b) => a.lng - b.lng);
+
+      // Build twilight strip between terminator and twilight line
+      const terminatorSorted = [...getTerminatorPoints(sun.lat, sun.lng, 120)].sort((a, b) => a.lng - b.lng);
+
+      // Create twilight polygon: trace terminator forward, then twilight line backward
+      const twilightPoly: { lat: number; lng: number; altitude: number }[] = [];
+      for (const p of terminatorSorted) {
+        twilightPoly.push({ lat: p.lat, lng: p.lng, altitude: 0 });
+      }
+      // Reverse twilight line to close the strip
+      for (let i = twilightSorted.length - 1; i >= 0; i--) {
+        twilightPoly.push({ lat: twilightSorted[i].lat, lng: twilightSorted[i].lng, altitude: 0 });
+      }
+      twilightPoly.push(twilightPoly[0]); // close
+
+      const twilightOverlay = new Polygon3DElement({
+        altitudeMode: "CLAMP_TO_GROUND",
+        fillColor: "rgba(0, 5, 25, 0.2)",
+        strokeColor: "rgba(0, 0, 0, 0)",
+        strokeWidth: 0,
+        outerCoordinates: twilightPoly,
+        drawsOccludedSegments: true,
+        zIndex: 1,
+      });
+      map.append(twilightOverlay);
+      dayNightRef.current.push(twilightOverlay);
+
+      // Terminator line — subtle glowing edge
+      const { Polyline3DElement } = await google.maps.importLibrary("maps3d");
+      if (cancelled) return;
+
+      const terminatorLineCoords = terminatorSorted.map(p => ({ lat: p.lat, lng: p.lng, altitude: 100 }));
+      // Soft outer glow
+      const terminatorGlow = new Polyline3DElement({
+        altitudeMode: "ABSOLUTE",
+        strokeColor: "rgba(255, 180, 60, 0.08)",
+        strokeWidth: 30,
+        coordinates: terminatorLineCoords,
+        drawsOccludedSegments: true,
+      });
+      map.append(terminatorGlow);
+      dayNightRef.current.push(terminatorGlow);
+
+      // Core terminator line
+      const terminatorLine = new Polyline3DElement({
+        altitudeMode: "ABSOLUTE",
+        strokeColor: "rgba(255, 200, 100, 0.15)",
+        strokeWidth: 4,
+        coordinates: terminatorLineCoords,
+        drawsOccludedSegments: true,
+      });
+      map.append(terminatorLine);
+      dayNightRef.current.push(terminatorLine);
+    };
+
+    drawTerminator();
+    // Update every 60 seconds
+    const interval = setInterval(drawTerminator, 60000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      dayNightRef.current.forEach((el) => { try { el.remove?.(); } catch {} });
+      dayNightRef.current = [];
+    };
+  }, [mapReady]);
 
   /* ══ ISS marker — always visible at all zoom levels ══ */
   useEffect(() => {
