@@ -488,47 +488,112 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => { if (animFrame) cancelAnimationFrame(animFrame); };
   }, [mapReady, updateAirportPulse]);
 
-  /* ══ Day/Night — screen-space gradient overlay ══ */
-  const dayNightDivRef = useRef<HTMLDivElement | null>(null);
+  /* ══ Day/Night — dynamic CSS filter + 3D city light markers ══ */
+  const cityLightMarkersRef = useRef<any[]>([]);
+  const dayNightStyleRef = useRef<HTMLStyleElement | null>(null);
 
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map || !is3dRef.current) return;
-    const div = dayNightDivRef.current;
-    if (!div) return;
 
-    let animFrame: number | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
     const toRad = (d: number) => d * Math.PI / 180;
 
-    // City lights data for night side rendering
+    // Dynamic style element for CSS filter
+    let style = dayNightStyleRef.current;
+    if (!style) {
+      style = document.createElement("style");
+      document.head.appendChild(style);
+      dayNightStyleRef.current = style;
+    }
+
+    // City data
     const cities = [
-      {lat:40.71,lng:-74.01,s:3.2},{lat:34.05,lng:-118.24,s:2.5},{lat:41.88,lng:-87.63,s:2.2},
-      {lat:29.76,lng:-95.37,s:1.8},{lat:33.45,lng:-112.07,s:1.4},{lat:39.95,lng:-75.17,s:1.5},
-      {lat:32.78,lng:-96.80,s:1.3},{lat:37.77,lng:-122.42,s:1.2},{lat:47.61,lng:-122.33,s:1.0},
-      {lat:38.91,lng:-77.04,s:1.1},{lat:42.36,lng:-71.06,s:1.0},{lat:33.75,lng:-84.39,s:1.2},
-      {lat:25.76,lng:-80.19,s:1.3},{lat:39.74,lng:-104.99,s:0.9},{lat:44.98,lng:-93.27,s:0.8},
-      {lat:43.65,lng:-79.38,s:2.0},{lat:45.50,lng:-73.57,s:1.4},{lat:49.28,lng:-123.12,s:0.9},
-      {lat:19.43,lng:-99.13,s:3.5},{lat:-23.55,lng:-46.63,s:3.8},{lat:-22.91,lng:-43.17,s:2.8},
-      {lat:-34.60,lng:-58.38,s:2.2},{lat:4.71,lng:-74.07,s:2.5},{lat:-12.05,lng:-77.04,s:3.0},
-      {lat:51.51,lng:-0.13,s:3.2},{lat:48.86,lng:2.35,s:2.0},{lat:52.52,lng:13.41,s:2.2},
-      {lat:40.42,lng:-3.70,s:2.0},{lat:41.90,lng:12.50,s:1.8},{lat:55.76,lng:37.62,s:3.5},
-      {lat:41.01,lng:28.98,s:3.8},{lat:30.04,lng:31.24,s:3.2},{lat:6.52,lng:3.38,s:3.8},
-      {lat:-26.20,lng:28.04,s:2.5},{lat:25.20,lng:55.27,s:2.0},{lat:35.68,lng:139.69,s:4.0},
-      {lat:31.23,lng:121.47,s:4.5},{lat:39.90,lng:116.40,s:4.2},{lat:22.32,lng:114.17,s:2.8},
-      {lat:1.35,lng:103.82,s:2.5},{lat:13.76,lng:100.50,s:3.0},{lat:28.61,lng:77.23,s:3.8},
-      {lat:19.08,lng:72.88,s:4.0},{lat:37.57,lng:126.98,s:3.2},{lat:-33.87,lng:151.21,s:2.5},
-      {lat:28.55,lng:-81.38,s:1.0},{lat:36.17,lng:-115.14,s:1.1},{lat:35.23,lng:-80.84,s:0.8},
-      {lat:30.27,lng:-97.74,s:0.9},{lat:42.33,lng:-83.05,s:0.8},{lat:39.10,lng:-84.51,s:0.7},
-      {lat:35.15,lng:-90.05,s:0.6},{lat:36.16,lng:-86.78,s:0.7},{lat:29.95,lng:-90.07,s:0.5},
+      {lat:40.71,lng:-74.01,s:2.8},{lat:34.05,lng:-118.24,s:2.2},{lat:41.88,lng:-87.63,s:2.0},
+      {lat:29.76,lng:-95.37,s:1.6},{lat:33.45,lng:-112.07,s:1.2},{lat:39.95,lng:-75.17,s:1.4},
+      {lat:32.78,lng:-96.80,s:1.2},{lat:37.77,lng:-122.42,s:1.1},{lat:47.61,lng:-122.33,s:0.9},
+      {lat:38.91,lng:-77.04,s:1.0},{lat:42.36,lng:-71.06,s:0.9},{lat:33.75,lng:-84.39,s:1.0},
+      {lat:25.76,lng:-80.19,s:1.2},{lat:39.74,lng:-104.99,s:0.8},{lat:44.98,lng:-93.27,s:0.7},
+      {lat:43.65,lng:-79.38,s:1.8},{lat:45.50,lng:-73.57,s:1.2},{lat:49.28,lng:-123.12,s:0.8},
+      {lat:19.43,lng:-99.13,s:3.0},{lat:-23.55,lng:-46.63,s:3.2},{lat:-22.91,lng:-43.17,s:2.4},
+      {lat:-34.60,lng:-58.38,s:2.0},{lat:4.71,lng:-74.07,s:2.2},{lat:-12.05,lng:-77.04,s:2.6},
+      {lat:51.51,lng:-0.13,s:2.8},{lat:48.86,lng:2.35,s:1.8},{lat:52.52,lng:13.41,s:1.8},
+      {lat:40.42,lng:-3.70,s:1.8},{lat:41.90,lng:12.50,s:1.6},{lat:55.76,lng:37.62,s:3.0},
+      {lat:41.01,lng:28.98,s:3.2},{lat:30.04,lng:31.24,s:2.8},{lat:6.52,lng:3.38,s:3.2},
+      {lat:-26.20,lng:28.04,s:2.2},{lat:25.20,lng:55.27,s:1.8},{lat:35.68,lng:139.69,s:3.5},
+      {lat:31.23,lng:121.47,s:3.8},{lat:39.90,lng:116.40,s:3.5},{lat:22.32,lng:114.17,s:2.4},
+      {lat:1.35,lng:103.82,s:2.2},{lat:13.76,lng:100.50,s:2.6},{lat:28.61,lng:77.23,s:3.2},
+      {lat:19.08,lng:72.88,s:3.5},{lat:37.57,lng:126.98,s:2.8},{lat:-33.87,lng:151.21,s:2.2},
+      {lat:28.55,lng:-81.38,s:0.8},{lat:36.17,lng:-115.14,s:0.9},{lat:30.27,lng:-97.74,s:0.8},
+      {lat:42.33,lng:-83.05,s:0.7},{lat:35.15,lng:-90.05,s:0.5},{lat:36.16,lng:-86.78,s:0.6},
     ];
 
-    const update = () => {
-      if (cancelled || !div) return;
+    // Create city light SVG for 3D markers — tiny warm glow
+    function cityLightSvg(size: number, opacity: number): string {
+      const r = Math.round(size * 10);
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${r}" height="${r}" viewBox="0 0 ${r} ${r}">
+        <defs><radialGradient id="cl" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="rgba(255,240,170,${opacity.toFixed(2)})"/>
+          <stop offset="30%" stop-color="rgba(255,220,100,${(opacity * 0.5).toFixed(2)})"/>
+          <stop offset="70%" stop-color="rgba(255,180,50,${(opacity * 0.15).toFixed(2)})"/>
+          <stop offset="100%" stop-color="rgba(255,180,50,0)"/>
+        </radialGradient></defs>
+        <circle cx="${r/2}" cy="${r/2}" r="${r/2}" fill="url(#cl)"/>
+      </svg>`;
+    }
 
-      const now = new Date();
-      const sun = getSunPosition(now);
+    const setupCityLights = async () => {
+      if (cancelled) return;
+      // Clean old markers
+      cityLightMarkersRef.current.forEach(m => { try { m.remove?.(); } catch {} });
+      cityLightMarkersRef.current = [];
+
+      const { Marker3DElement } = await google.maps.importLibrary("maps3d");
+      if (cancelled) return;
+
+      const sun = getSunPosition(new Date());
+      const sunLatRad = toRad(sun.lat);
+      const sunLngRad = toRad(sun.lng);
+
+      for (const city of cities) {
+        // Check night side
+        const cφ = toRad(city.lat);
+        const cλ = toRad(city.lng);
+        const cosSun = Math.sin(sunLatRad) * Math.sin(cφ) +
+          Math.cos(sunLatRad) * Math.cos(cφ) * Math.cos(cλ - sunLngRad);
+        if (cosSun > 0.05) continue; // dayside — skip
+
+        const nightDepth = Math.min(1, Math.max(0, -cosSun * 3));
+        const opacity = nightDepth * 0.85;
+        if (opacity < 0.1) continue;
+
+        const marker = new Marker3DElement({
+          position: { lat: city.lat, lng: city.lng, altitude: 0 },
+          altitudeMode: "CLAMP_TO_GROUND",
+          collisionBehavior: "OPTIONAL_AND_HIDES_LOWER_PRIORITY",
+          zIndex: 2,
+        });
+
+        const tpl = document.createElement("template");
+        const img = document.createElement("img");
+        const svgStr = cityLightSvg(city.s, opacity);
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+        const px = Math.round(city.s * 10);
+        img.width = px;
+        img.height = px;
+        img.style.display = "block";
+        tpl.content.appendChild(img);
+        marker.append(tpl);
+        map.append(marker);
+        cityLightMarkersRef.current.push(marker);
+      }
+    };
+
+    const updateFilter = () => {
+      if (cancelled) return;
+      const sun = getSunPosition(new Date());
       const sunLatRad = toRad(sun.lat);
       const sunLngRad = toRad(sun.lng);
 
@@ -541,99 +606,83 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         camRange = map.range ?? 12000000;
       } catch {}
 
-      // Fade out when zoomed in to airport level
-      const zoomFade = Math.max(0, Math.min(1, (camRange - DAY_NIGHT_FADE_MIN) / (DAY_NIGHT_FADE_MAX - DAY_NIGHT_FADE_MIN)));
-      if (zoomFade < 0.01) {
-        div.style.opacity = "0";
-        animFrame = requestAnimationFrame(update);
-        return;
-      }
-      div.style.opacity = "1";
-
-      // Sun direction relative to camera center in screen-space
-      let deltaLng = sun.lng - camLng;
-      if (deltaLng > 180) deltaLng -= 360;
-      if (deltaLng < -180) deltaLng += 360;
-      const deltaLat = sun.lat - camLat;
-
-      // Screen angle FROM camera center TOWARD the sun
-      // CSS linear-gradient angle: 0deg = bottom→top, 90deg = left→right
-      // atan2 gives angle where 0 = right on screen
-      // We want gradient to go FROM sun side (light) TO anti-sun side (dark)
-      const sunScreenAngle = Math.atan2(-deltaLat, deltaLng) * 180 / Math.PI;
-      // CSS gradient angle: goes IN the direction specified
-      // We want darkness to increase AWAY from the sun
-      // So gradient direction should point AWAY from sun (add 180°)
-      const gradAngle = sunScreenAngle + 180 + 90; // +90 converts from math coords to CSS coords
-
-      // Solar cosine at camera center
+      // Solar angle at camera center
       const φ = toRad(camLat);
       const λ = toRad(camLng);
       const cosAngle = Math.sin(sunLatRad) * Math.sin(φ) +
         Math.cos(sunLatRad) * Math.cos(φ) * Math.cos(λ - sunLngRad);
 
-      // terminatorPos: where the terminator crosses the gradient axis (0-100%)
-      // cosAngle=1 → full day, terminator at far end → terminatorPos near 95
-      // cosAngle=0 → terminator at center → 50
-      // cosAngle=-1 → full night, terminator near start → 5
-      const terminatorPos = Math.max(5, Math.min(95, 50 + cosAngle * 42));
-
-      const nightAlpha = 0.82 * zoomFade;
-      const twilightAlpha = 0.4 * zoomFade;
-
-      // City lights — radial gradients layered on top of the linear gradient
-      const fovDeg = Math.min(160, (camRange / 111320) * 0.7);
-      const aspectRatio = (div.clientWidth || 1) / (div.clientHeight || 1);
-      const lightLayers: string[] = [];
-
-      for (const city of cities) {
-        const cφ = toRad(city.lat);
-        const cλ = toRad(city.lng);
-        const cosSun = Math.sin(sunLatRad) * Math.sin(cφ) +
-          Math.cos(sunLatRad) * Math.cos(cφ) * Math.cos(cλ - sunLngRad);
-        if (cosSun > -0.02) continue;
-
-        let dLng = city.lng - camLng;
-        if (dLng > 180) dLng -= 360;
-        if (dLng < -180) dLng += 360;
-        const dLat = city.lat - camLat;
-
-        const sx = 50 + (dLng / (fovDeg * aspectRatio * 0.5)) * 50;
-        const sy = 50 - (dLat / (fovDeg * 0.5)) * 50;
-
-        if (sx < -5 || sx > 105 || sy < -5 || sy > 105) continue;
-
-        const nightDepth = Math.min(1, -cosSun * 4);
-        const alpha = nightDepth * zoomFade * 0.65;
-        if (alpha < 0.05) continue;
-
-        const sizePx = city.s * Math.max(4, Math.min(20, camRange / 2000000));
-
-        lightLayers.push(
-          `radial-gradient(circle ${sizePx.toFixed(0)}px at ${sx.toFixed(1)}% ${sy.toFixed(1)}%, rgba(255,230,130,${(alpha * 0.9).toFixed(2)}) 0%, rgba(255,200,80,${(alpha * 0.3).toFixed(2)}) 40%, transparent 100%)`
-        );
+      // Dynamic brightness: day=bright, night=very dark
+      let brightness: number, saturation: number;
+      if (cosAngle > 0.1) {
+        brightness = 0.8; saturation = 0.65;
+      } else if (cosAngle > -0.1) {
+        const t = (0.1 - cosAngle) / 0.2;
+        const s = t * t * (3 - 2 * t);
+        brightness = 0.8 - s * 0.48;
+        saturation = 0.65 - s * 0.45;
+      } else {
+        brightness = 0.32; saturation = 0.20;
       }
 
-      // Combine: city lights on top, night gradient on bottom
-      const nightGrad = `linear-gradient(${gradAngle.toFixed(1)}deg,
-        transparent ${Math.max(0, terminatorPos - 20).toFixed(1)}%,
-        rgba(2,4,16,${twilightAlpha.toFixed(2)}) ${terminatorPos.toFixed(1)}%,
-        rgba(2,4,16,${nightAlpha.toFixed(2)}) ${Math.min(100, terminatorPos + 18).toFixed(1)}%,
-        rgba(2,4,16,${nightAlpha.toFixed(2)}) 100%)`;
+      // Brighten when zoomed into airport level
+      if (camRange < 500000) {
+        const z = 1 - camRange / 500000;
+        brightness += (0.7 - brightness) * z;
+        saturation += (0.55 - saturation) * z;
+      }
 
-      div.style.background = lightLayers.length > 0
-        ? [...lightLayers, nightGrad].join(", ")
-        : nightGrad;
-
-      animFrame = requestAnimationFrame(update);
+      style!.textContent = `
+        .skyway-map-container canvas,
+        .skyway-map-container .gm-style > div > div > div > div > canvas,
+        .skyway-map-container iframe,
+        .skyway-map-container img:not([data-skyway-marker]) {
+          filter: brightness(${brightness.toFixed(3)}) saturate(${saturation.toFixed(3)}) contrast(1.15);
+          transition: filter 1.5s ease;
+        }
+      `;
     };
 
-    animFrame = requestAnimationFrame(update);
+    // Initial setup
+    setupCityLights();
+    updateFilter();
+
+    // Refresh city lights every 2 min (sun moves), filter every 5s
+    interval = setInterval(() => {
+      setupCityLights();
+      updateFilter();
+    }, 120000);
+
+    // Update filter more frequently with rAF
+    let animFrame: number | null = null;
+    let lastFilterUpdate = 0;
+    const filterLoop = () => {
+      if (cancelled) return;
+      const now = Date.now();
+      if (now - lastFilterUpdate > 3000) { // every 3s
+        updateFilter();
+        lastFilterUpdate = now;
+      }
+      animFrame = requestAnimationFrame(filterLoop);
+    };
+    animFrame = requestAnimationFrame(filterLoop);
 
     return () => {
       cancelled = true;
+      if (interval) clearInterval(interval);
       if (animFrame) cancelAnimationFrame(animFrame);
-      if (div) { div.style.background = "none"; div.style.opacity = "0"; }
+      cityLightMarkersRef.current.forEach(m => { try { m.remove?.(); } catch {} });
+      cityLightMarkersRef.current = [];
+      if (style) {
+        style.textContent = `
+          .skyway-map-container canvas,
+          .skyway-map-container .gm-style > div > div > div > div > canvas,
+          .skyway-map-container iframe,
+          .skyway-map-container img:not([data-skyway-marker]) {
+            filter: brightness(0.55) saturate(0.5) contrast(1.15);
+          }
+        `;
+      }
     };
   }, [mapReady]);
 
@@ -1271,7 +1320,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         }
       `}</style>
       <div ref={containerRef} className="absolute inset-0 z-0 skyway-map-container" />
-      <div ref={dayNightDivRef} className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }} />
     </>
   );
 }
