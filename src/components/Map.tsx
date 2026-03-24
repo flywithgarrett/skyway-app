@@ -58,31 +58,64 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Airport marker HTML — pulsing beacon + IATA label ── */
-function airportMarkerHtml(code: string, pulsing: boolean): string {
+/* ── Airport marker SVG — pulsing beacon + IATA label (must be pure SVG for 3D markers) ── */
+function airportMarkerSvg(code: string, pulsing: boolean): string {
+  const w = 140, h = 100, cx = w / 2;
+  const dotY = 32;
+  const textW = code.length * 14 + 18;
+  const pillX = cx - textW / 2;
+
+  // Pulsing rings using SVG <animate> — only when pulsing
   const pulseRings = pulsing ? `
-    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:2px solid rgba(0,229,255,0.5);animation:skyway-airport-pulse 2s ease-out infinite;"></div>
-    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:1.5px solid rgba(0,229,255,0.3);animation:skyway-airport-pulse 2s ease-out infinite 0.6s;"></div>
-    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:1px solid rgba(0,229,255,0.15);animation:skyway-airport-pulse 2s ease-out infinite 1.2s;"></div>
+    <circle cx="${cx}" cy="${dotY}" r="8" fill="none" stroke="rgba(0,229,255,0.6)" stroke-width="2">
+      <animate attributeName="r" from="8" to="50" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" from="0.8" to="0" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="${cx}" cy="${dotY}" r="8" fill="none" stroke="rgba(0,229,255,0.4)" stroke-width="1.5">
+      <animate attributeName="r" from="8" to="50" dur="2s" begin="0.6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" from="0.6" to="0" dur="2s" begin="0.6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="${cx}" cy="${dotY}" r="8" fill="none" stroke="rgba(0,229,255,0.25)" stroke-width="1">
+      <animate attributeName="r" from="8" to="50" dur="2s" begin="1.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" from="0.4" to="0" dur="2s" begin="1.2s" repeatCount="indefinite"/>
+    </circle>
   ` : "";
 
-  const coreGlow = pulsing
-    ? "box-shadow:0 0 16px 6px rgba(0,229,255,0.7),0 0 40px 12px rgba(0,229,255,0.25);animation:skyway-beacon-glow 2s ease-in-out infinite;"
-    : "box-shadow:0 0 8px 3px rgba(0,229,255,0.4);";
+  // Core beacon glow animation
+  const beaconGlow = pulsing
+    ? `<circle cx="${cx}" cy="${dotY}" r="14" fill="rgba(0,229,255,0.15)">
+        <animate attributeName="r" values="14;20;14" dur="2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.4;0.8;0.4" dur="2s" repeatCount="indefinite"/>
+      </circle>`
+    : "";
 
-  return `<div style="position:relative;width:120px;height:86px;pointer-events:none;">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs>
+      <radialGradient id="ag_${code}" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="rgba(0,229,255,1)"/>
+        <stop offset="25%" stop-color="rgba(0,229,255,0.7)"/>
+        <stop offset="60%" stop-color="rgba(0,229,255,0.15)"/>
+        <stop offset="100%" stop-color="rgba(0,229,255,0)"/>
+      </radialGradient>
+      <filter id="af_${code}" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="1"/>
+      </filter>
+    </defs>
     ${pulseRings}
-    <!-- Radial glow -->
-    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,0.6) 0%,rgba(0,229,255,0.15) 50%,transparent 80%);${pulsing ? "animation:skyway-beacon-glow 2s ease-in-out infinite;" : ""}"></div>
-    <!-- Core dot -->
-    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#00e5ff;${coreGlow}"></div>
-    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#ffffff;"></div>
-    <!-- IATA label -->
-    <div style="position:absolute;left:50%;top:56px;transform:translateX(-50%);background:rgba(0,0,0,0.8);border:1px solid rgba(0,229,255,0.35);border-radius:12px;padding:3px 10px;white-space:nowrap;">
-      <span style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;font-size:13px;font-weight:800;color:#ffffff;letter-spacing:1.5px;text-shadow:0 1px 4px rgba(0,0,0,1);">${code}</span>
-    </div>
-  </div>`;
+    ${beaconGlow}
+    <!-- Static glow halo -->
+    <circle cx="${cx}" cy="${dotY}" r="26" fill="url(#ag_${code})"/>
+    <!-- Core bright dot -->
+    <circle cx="${cx}" cy="${dotY}" r="6" fill="#00e5ff" opacity="0.9"/>
+    <circle cx="${cx}" cy="${dotY}" r="3" fill="#fff"/>
+    <!-- Dark pill label -->
+    <rect x="${pillX}" y="62" width="${textW}" height="26" rx="13" fill="rgba(0,0,0,0.8)"/>
+    <rect x="${pillX}" y="62" width="${textW}" height="26" rx="13" fill="none" stroke="rgba(0,229,255,0.35)" stroke-width="1"/>
+    <!-- IATA code -->
+    <text x="${cx}" y="80" text-anchor="middle" font-family="'SF Pro Display','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="800" fill="#ffffff" letter-spacing="1.5" filter="url(#af_${code})">${code}</text>
+  </svg>`;
 }
+
 
 /* ── ISS marker SVG — always visible, distinctive golden icon ── */
 function issMarkerSvg(): string {
@@ -265,28 +298,34 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
   const airportPulsingRef = useRef<Set<string>>(new Set());
   const airportDataRef = useRef<Map<string, { marker: any; airport: Airport }>>(new Map());
 
+  // Parse SVG string into an actual SVGElement DOM node (required for 3D markers to get animation)
+  const parseSvgElement = useCallback((svgString: string): SVGElement => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgString, "image/svg+xml");
+    return doc.documentElement as unknown as SVGElement;
+  }, []);
+
   const updateAirportPulse = useCallback((pulsingCodes: Set<string>) => {
     airportPulsingRef.current = pulsingCodes;
     for (const [code, { marker, airport }] of airportDataRef.current) {
       const shouldPulse = pulsingCodes.has(code);
       if (is3dRef.current) {
+        // 3D: use SVGElement directly (gmp-marker-3d accepts HTMLImageElement or SVGElement)
         const tpl = document.createElement("template");
-        const div = document.createElement("div");
-        div.innerHTML = airportMarkerHtml(code, shouldPulse);
-        div.title = `${airport.code} — ${airport.name}, ${airport.city}`;
-        tpl.content.appendChild(div);
+        const svgEl = parseSvgElement(airportMarkerSvg(code, shouldPulse));
+        tpl.content.appendChild(svgEl);
         while (marker.firstChild) marker.removeChild(marker.firstChild);
         marker.append(tpl);
       } else {
         if (marker.content) {
           const div = document.createElement("div");
-          div.innerHTML = airportMarkerHtml(code, shouldPulse);
+          div.innerHTML = airportMarkerSvg(code, shouldPulse);
           div.title = `${airport.code} — ${airport.name}, ${airport.city}`;
           marker.content = div;
         }
       }
     }
-  }, []);
+  }, [parseSvgElement]);
 
   useEffect(() => {
     if (!mapReady || !airports.length) return;
@@ -314,10 +353,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
           });
           const shouldPulse = airportPulsingRef.current.has(apt.code);
           const tpl = document.createElement("template");
-          const div = document.createElement("div");
-          div.innerHTML = airportMarkerHtml(apt.code, shouldPulse);
-          div.title = `${apt.code} — ${apt.name}, ${apt.city}`;
-          tpl.content.appendChild(div);
+          const svgEl = parseSvgElement(airportMarkerSvg(apt.code, shouldPulse));
+          tpl.content.appendChild(svgEl);
           marker.append(tpl);
           map.append(marker);
           airportMarkersRef.current.push(marker);
@@ -328,7 +365,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         if (cancelled) return;
         for (const apt of majors) {
           const div = document.createElement("div");
-          div.innerHTML = airportMarkerHtml(apt.code, false);
+          div.innerHTML = airportMarkerSvg(apt.code, false);
           div.title = `${apt.code} — ${apt.name}, ${apt.city}`;
           const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: div, zIndex: 5000 });
           airportMarkersRef.current.push(m);
@@ -338,7 +375,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     })();
 
     return () => { cancelled = true; };
-  }, [mapReady, airports, updateAirportPulse]);
+  }, [mapReady, airports, updateAirportPulse, parseSvgElement]);
 
   /* ══ Detect zoom level → pulse nearby airports + show ground traffic ══ */
   useEffect(() => {
@@ -930,15 +967,6 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         .skyway-map-container .gm-style-iw,
         .skyway-map-container [data-skyway-marker] {
           filter: none !important;
-        }
-        /* Airport pulsing beacon animations */
-        @keyframes skyway-airport-pulse {
-          0% { transform: translate(-50%, -50%) scale(0.3); opacity: 1; }
-          100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
-        }
-        @keyframes skyway-beacon-glow {
-          0%, 100% { opacity: 0.7; }
-          50% { opacity: 1; }
         }
       `}</style>
       <div ref={containerRef} className="absolute inset-0 z-0 skyway-map-container" />
