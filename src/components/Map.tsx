@@ -845,6 +845,19 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
     const zoomedIn = isZoomedInRef.current;
 
+    // Dynamic marker sizing based on camera range (3D) or zoom (2D)
+    // At globe view (10,000km+) → tiny icons like FlightAware (~14px)
+    // At airport level (<200km) → full size icons
+    const range3d = is3dRef.current ? cameraRangeRef.current : null;
+    const computeSize = (baseSize: number, minSize: number) => {
+      if (range3d === null) return baseSize; // 2D mode uses base sizes
+      // Clamp range to [200km, 10000km] for interpolation
+      const clampedRange = Math.max(200000, Math.min(10000000, range3d));
+      // Log scale interpolation: smooth transition across zoom levels
+      const t = (Math.log(clampedRange) - Math.log(200000)) / (Math.log(10000000) - Math.log(200000));
+      return Math.round(minSize + (baseSize - minSize) * (1 - t));
+    };
+
     if (is3dRef.current) {
       const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
 
@@ -852,7 +865,9 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
+        const baseSize = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
+        const minIcon = isSel ? 24 : isGround ? 10 : 14;
+        const sz = computeSize(baseSize, minIcon);
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
