@@ -58,38 +58,30 @@ function planeSvgUrl(color: string, heading: number, size = 32, glow = false): s
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(planeSvg(color, heading, size, glow))}`;
 }
 
-/* ── Airport marker SVG — bright dot + bold white IATA on dark pill ── */
-function airportMarkerSvg(code: string): string {
-  const w = 120, h = 86, cx = w / 2;
-  const textW = code.length * 14 + 16;
-  const pillX = cx - textW / 2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
-    <defs>
-      <radialGradient id="ag_${code}" cx="50%" cy="50%" r="50%">
-        <stop offset="0%" stop-color="rgba(0,229,255,1)"/>
-        <stop offset="25%" stop-color="rgba(0,229,255,0.7)"/>
-        <stop offset="60%" stop-color="rgba(0,229,255,0.15)"/>
-        <stop offset="100%" stop-color="rgba(0,229,255,0)"/>
-      </radialGradient>
-      <filter id="af_${code}" x="-20%" y="-20%" width="140%" height="140%">
-        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="1"/>
-      </filter>
-    </defs>
-    <!-- Glow -->
-    <circle cx="${cx}" cy="26" r="26" fill="url(#ag_${code})"/>
-    <!-- Bright dot -->
-    <circle cx="${cx}" cy="26" r="6" fill="#00e5ff" opacity="0.9"/>
-    <circle cx="${cx}" cy="26" r="3" fill="#fff"/>
-    <!-- Dark pill behind text -->
-    <rect x="${pillX}" y="56" width="${textW}" height="24" rx="12" fill="rgba(0,0,0,0.75)"/>
-    <rect x="${pillX}" y="56" width="${textW}" height="24" rx="12" fill="none" stroke="rgba(0,229,255,0.3)" stroke-width="1"/>
-    <!-- IATA code -->
-    <text x="${cx}" y="73" text-anchor="middle" font-family="'SF Pro Display','Inter',-apple-system,BlinkMacSystemFont,sans-serif" font-size="15" font-weight="800" fill="#ffffff" letter-spacing="1.5" filter="url(#af_${code})">${code}</text>
-  </svg>`;
-}
+/* ── Airport marker HTML — pulsing beacon + IATA label ── */
+function airportMarkerHtml(code: string, pulsing: boolean): string {
+  const pulseRings = pulsing ? `
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:2px solid rgba(0,229,255,0.5);animation:skyway-airport-pulse 2s ease-out infinite;"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:1.5px solid rgba(0,229,255,0.3);animation:skyway-airport-pulse 2s ease-out infinite 0.6s;"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:50%;border:1px solid rgba(0,229,255,0.15);animation:skyway-airport-pulse 2s ease-out infinite 1.2s;"></div>
+  ` : "";
 
-function airportMarkerUrl(code: string): string {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(airportMarkerSvg(code))}`;
+  const coreGlow = pulsing
+    ? "box-shadow:0 0 16px 6px rgba(0,229,255,0.7),0 0 40px 12px rgba(0,229,255,0.25);animation:skyway-beacon-glow 2s ease-in-out infinite;"
+    : "box-shadow:0 0 8px 3px rgba(0,229,255,0.4);";
+
+  return `<div style="position:relative;width:120px;height:86px;pointer-events:none;">
+    ${pulseRings}
+    <!-- Radial glow -->
+    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;background:radial-gradient(circle,rgba(0,229,255,0.6) 0%,rgba(0,229,255,0.15) 50%,transparent 80%);${pulsing ? "animation:skyway-beacon-glow 2s ease-in-out infinite;" : ""}"></div>
+    <!-- Core dot -->
+    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#00e5ff;${coreGlow}"></div>
+    <div style="position:absolute;left:50%;top:26px;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#ffffff;"></div>
+    <!-- IATA label -->
+    <div style="position:absolute;left:50%;top:56px;transform:translateX(-50%);background:rgba(0,0,0,0.8);border:1px solid rgba(0,229,255,0.35);border-radius:12px;padding:3px 10px;white-space:nowrap;">
+      <span style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;font-size:13px;font-weight:800;color:#ffffff;letter-spacing:1.5px;text-shadow:0 1px 4px rgba(0,0,0,1);">${code}</span>
+    </div>
+  </div>`;
 }
 
 /* ── ISS marker SVG — always visible, distinctive golden icon ── */
@@ -266,7 +258,36 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     };
   }, []);
 
-  /* ══ Airport glowing dots ══ */
+  /* ══ Track zoom level for ground traffic scaling ══ */
+  const isZoomedInRef = useRef(false);
+
+  /* ══ Airport pulsing beacon markers ══ */
+  const airportPulsingRef = useRef<Set<string>>(new Set());
+  const airportDataRef = useRef<Map<string, { marker: any; airport: Airport }>>(new Map());
+
+  const updateAirportPulse = useCallback((pulsingCodes: Set<string>) => {
+    airportPulsingRef.current = pulsingCodes;
+    for (const [code, { marker, airport }] of airportDataRef.current) {
+      const shouldPulse = pulsingCodes.has(code);
+      if (is3dRef.current) {
+        const tpl = document.createElement("template");
+        const div = document.createElement("div");
+        div.innerHTML = airportMarkerHtml(code, shouldPulse);
+        div.title = `${airport.code} — ${airport.name}, ${airport.city}`;
+        tpl.content.appendChild(div);
+        while (marker.firstChild) marker.removeChild(marker.firstChild);
+        marker.append(tpl);
+      } else {
+        if (marker.content) {
+          const div = document.createElement("div");
+          div.innerHTML = airportMarkerHtml(code, shouldPulse);
+          div.title = `${airport.code} — ${airport.name}, ${airport.city}`;
+          marker.content = div;
+        }
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!mapReady || !airports.length) return;
     const map = mapRef.current;
@@ -276,10 +297,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     (async () => {
       airportMarkersRef.current.forEach((m) => { try { m.remove?.(); m.setMap?.(null); } catch {} });
       airportMarkersRef.current = [];
+      airportDataRef.current.clear();
       if (cancelled) return;
 
       const majors = airports.filter((a) => MAJOR_AIRPORTS.has(a.code));
-      console.log(`Adding ${majors.length} major airport markers`);
 
       if (is3dRef.current) {
         const { Marker3DElement } = await google.maps.importLibrary("maps3d");
@@ -291,34 +312,102 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
             collisionBehavior: "REQUIRED",
             zIndex: 5000,
           });
-          // Custom SVG template with IATA code
+          const shouldPulse = airportPulsingRef.current.has(apt.code);
           const tpl = document.createElement("template");
-          const img = document.createElement("img");
-          img.src = airportMarkerUrl(apt.code);
-          img.width = 120;
-          img.height = 86;
-          img.style.display = "block";
-          img.title = `${apt.code} — ${apt.name}, ${apt.city}`;
-          tpl.content.appendChild(img);
+          const div = document.createElement("div");
+          div.innerHTML = airportMarkerHtml(apt.code, shouldPulse);
+          div.title = `${apt.code} — ${apt.name}, ${apt.city}`;
+          tpl.content.appendChild(div);
           marker.append(tpl);
           map.append(marker);
           airportMarkersRef.current.push(marker);
+          airportDataRef.current.set(apt.code, { marker, airport: apt });
         }
       } else {
         const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
         if (cancelled) return;
         for (const apt of majors) {
           const div = document.createElement("div");
-          div.innerHTML = airportMarkerSvg(apt.code);
+          div.innerHTML = airportMarkerHtml(apt.code, false);
           div.title = `${apt.code} — ${apt.name}, ${apt.city}`;
           const m = new AdvancedMarkerElement({ map, position: { lat: apt.lat, lng: apt.lng }, content: div, zIndex: 5000 });
           airportMarkersRef.current.push(m);
+          airportDataRef.current.set(apt.code, { marker: m, airport: apt });
         }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [mapReady, airports]);
+  }, [mapReady, airports, updateAirportPulse]);
+
+  /* ══ Detect zoom level → pulse nearby airports + show ground traffic ══ */
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    let animFrame: number | null = null;
+    let lastRange = -1;
+
+    const checkZoom = () => {
+      const range = is3dRef.current ? (map.range ?? 40000000) : null;
+      const zoom = !is3dRef.current && map.getZoom ? map.getZoom() : null;
+
+      // Determine "close" zoom: range < 200km in 3D or zoom > 10 in 2D
+      const isClose = range !== null ? range < 200000 : (zoom !== null && zoom > 10);
+      isZoomedInRef.current = isClose;
+
+      if (range !== null && Math.abs(range - lastRange) < 500) {
+        animFrame = requestAnimationFrame(checkZoom);
+        return;
+      }
+      lastRange = range ?? -1;
+
+      if (isClose) {
+        // Find airports near the camera center
+        let centerLat: number, centerLng: number;
+        if (is3dRef.current && map.center) {
+          centerLat = typeof map.center.lat === "function" ? map.center.lat() : map.center.lat;
+          centerLng = typeof map.center.lng === "function" ? map.center.lng() : map.center.lng;
+        } else if (map.getCenter) {
+          const c = map.getCenter();
+          centerLat = c.lat();
+          centerLng = c.lng();
+        } else {
+          animFrame = requestAnimationFrame(checkZoom);
+          return;
+        }
+
+        // Find airports within ~1 degree (~60 nm) of camera center
+        const nearbyAirports = new Set<string>();
+        for (const [code, { airport }] of airportDataRef.current) {
+          const dLat = Math.abs(airport.lat - centerLat);
+          const dLng = Math.abs(airport.lng - centerLng);
+          if (dLat < 1.5 && dLng < 1.5) {
+            nearbyAirports.add(code);
+          }
+        }
+
+        // Update pulsing state
+        const currentPulsing = airportPulsingRef.current;
+        const changed = nearbyAirports.size !== currentPulsing.size ||
+          [...nearbyAirports].some(c => !currentPulsing.has(c));
+        if (changed) {
+          updateAirportPulse(nearbyAirports);
+        }
+      } else {
+        // Not close — stop all pulsing
+        if (airportPulsingRef.current.size > 0) {
+          updateAirportPulse(new Set());
+        }
+      }
+
+      animFrame = requestAnimationFrame(checkZoom);
+    };
+
+    animFrame = requestAnimationFrame(checkZoom);
+    return () => { if (animFrame) cancelAnimationFrame(animFrame); };
+  }, [mapReady, updateAirportPulse]);
 
   /* ══ ISS marker — always visible at all zoom levels ══ */
   useEffect(() => {
@@ -415,11 +504,15 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     const map = mapRef.current;
     if (!map) return;
 
+    // Immediately start pulsing the target airport
+    const pulsingSet = new Set([flyToAirport.code]);
+    updateAirportPulse(pulsingSet);
+
     if (is3dRef.current && map.flyCameraTo) {
       map.flyCameraTo({
         endCamera: {
           center: { lat: flyToAirport.lat, lng: flyToAirport.lng, altitude: 0 },
-          range: 15000,  // Very close zoom to see airport surface
+          range: 15000,
           tilt: 55,
           heading: 0,
         },
@@ -431,7 +524,7 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     }
 
     onFlyToAirportComplete?.();
-  }, [flyToAirport, mapReady, onFlyToAirportComplete]);
+  }, [flyToAirport, mapReady, onFlyToAirportComplete, updateAirportPulse]);
 
   /* ══ Flights ══ */
   const updateFlights = useCallback(async () => {
@@ -451,6 +544,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     }
 
+    const zoomedIn = isZoomedInRef.current;
+
     if (is3dRef.current) {
       const { Marker3DInteractiveElement } = await google.maps.importLibrary("maps3d");
 
@@ -458,14 +553,16 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? 68 : isGround ? 36 : 56;
+        // Scale up ground aircraft when zoomed into airport level
+        const sz = isSel ? 68 : isGround ? (zoomedIn ? 52 : 36) : 56;
+        const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
 
         const mkIcon = () => {
           const tpl = document.createElement("template");
           const img = document.createElement("img");
-          img.src = planeSvgUrl(color, f.heading, sz, isSel);
+          img.src = planeSvgUrl(color, f.heading, sz, glow);
           img.width = sz;
           img.height = sz;
           img.style.display = "block";
@@ -507,10 +604,10 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         const isSel = f.id === selectedRef.current?.id;
         const isGround = f.onGround;
         const color = isSel ? "#00e5ff" : isGround ? "#fbbf24" : hasSelection ? "rgba(255,255,255,0.25)" : "#ffffff";
-        const sz = isSel ? 68 : isGround ? 36 : 56;
+        const sz = isSel ? 68 : isGround ? (zoomedIn ? 52 : 36) : 56;
         const mkEl = () => {
           const div = document.createElement("div");
-          div.innerHTML = planeSvg(color, f.heading, sz, isSel);
+          div.innerHTML = planeSvg(color, f.heading, sz, isSel || (isGround && zoomedIn));
           div.style.cursor = "pointer";
           return div;
         };
@@ -833,6 +930,15 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         .skyway-map-container .gm-style-iw,
         .skyway-map-container [data-skyway-marker] {
           filter: none !important;
+        }
+        /* Airport pulsing beacon animations */
+        @keyframes skyway-airport-pulse {
+          0% { transform: translate(-50%, -50%) scale(0.3); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+        }
+        @keyframes skyway-beacon-glow {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
         }
       `}</style>
       <div ref={containerRef} className="absolute inset-0 z-0 skyway-map-container" />
