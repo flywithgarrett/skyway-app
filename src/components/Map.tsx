@@ -25,25 +25,68 @@ interface MapProps {
 }
 
 /* ── Constants ── */
-const MARKER_SIZE_SELECTED = 68;
+const MARKER_SIZE_SELECTED = 52;
 const MARKER_SIZE_GROUND = 36;
 const MARKER_SIZE_GROUND_ZOOMED = 52;
-const MARKER_SIZE_AIRBORNE = 56;
-const MARKER_SIZE_MIN_AIRBORNE = 32;  // Never smaller than 32px (FlightAware-like)
-const MARKER_SIZE_MIN_SELECTED = 40;
-const MARKER_SIZE_MIN_GROUND = 20;
+const MARKER_SIZE_AIRBORNE = 46;
 const ZOOM_CLOSE_RANGE = 200000;   // 200km — airport level
 const ZOOM_CLOSE_2D = 10;
 const NEARBY_AIRPORT_DEG = 1.5;    // ~90nm radius
 const MAX_POSITION_HISTORY = 200;
 const GROUND_SELECT_MAX_RANGE = 5000;
+const GROUND_SHOW_RANGE = 50000;   // 50km — show ground traffic (~zoom 12 equivalent)
 
-/* ── Altitude-based color coding (FlightAware-style) ── */
+/* ── Zoom-based icon sizing (range in meters → pixel size) ── */
+function computeIconSize(range3d: number | null, zoom2d: number | null, isSel: boolean, isGround: boolean): number {
+  if (isSel) return MARKER_SIZE_SELECTED;
+  // In 3D mode, convert range to approximate equivalent zoom for sizing
+  let effectiveZoom: number;
+  if (range3d !== null) {
+    // Approximate: zoom ≈ 22 - log2(range_meters / 200)
+    effectiveZoom = Math.max(0, Math.min(20, 22 - Math.log2(range3d / 200)));
+  } else if (zoom2d !== null) {
+    effectiveZoom = zoom2d;
+  } else {
+    return isGround ? MARKER_SIZE_GROUND : MARKER_SIZE_AIRBORNE;
+  }
+  if (isGround) {
+    if (effectiveZoom >= 14) return 52;
+    return 36;
+  }
+  // Airborne sizing — FlightAware-comparable at every zoom level
+  if (effectiveZoom < 5) return 28;      // Globe view
+  if (effectiveZoom < 7) return 34;      // Country view
+  if (effectiveZoom < 9) return 40;      // Region view
+  if (effectiveZoom < 12) return 46;     // City view
+  return 52;                             // Airport view
+}
+
+/* ── Altitude-based color coding (FlightAware-style: amber/orange for cruise) ── */
 function altitudeColor(altitude: number, onGround: boolean): string {
   if (onGround) return "#4CAF50";             // Green — on ground
-  if (altitude < 10000) return "#F5A623";     // Gold/amber — low altitude
-  if (altitude <= 25000) return "#F0C040";    // Light orange — mid altitude
-  return "#ffffff";                           // White — cruise altitude
+  if (altitude <= 0) return "#888888";        // Gray — unknown altitude
+  if (altitude < 10000) return "#ffffff";     // White — low altitude (departures/arrivals)
+  if (altitude <= 25000) return "#F0C040";    // Light amber — mid altitude (climbing/descending)
+  return "#F5A623";                           // Warm amber — cruise altitude (FlightAware orange)
+}
+
+/* ── Geo-grid sampling: ensures flights spread globally, not clumped by data order ── */
+function sampleByGeoGrid(flights: Flight[], maxPerCell: number): Flight[] {
+  const grid: Record<string, Flight[]> = {};
+  for (const f of flights) {
+    // 20x10 grid (18° cells): evenly covers globe
+    const cellX = Math.floor((f.currentLng + 180) / 18);
+    const cellY = Math.floor((f.currentLat + 90) / 18);
+    const key = `${cellX}-${cellY}`;
+    if (!grid[key]) grid[key] = [];
+    if (grid[key].length < maxPerCell) grid[key].push(f);
+  }
+  return Object.values(grid).flat();
+}
+
+/* ── Determine if a flight is ground traffic ── */
+function isGroundTraffic(f: Flight): boolean {
+  return f.onGround || (f.altitude > 0 && f.altitude < 1000) || (f.speed > 0 && f.speed < 50);
 }
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
@@ -58,7 +101,7 @@ const MAJOR_AIRPORTS = new Set([
   "YYZ","YVR","YUL","YYC","MEX","CUN","LHR","CDG","FRA","AMS",
 ]);
 
-/* ── Plane SVG — bold bright white aircraft, Apple-premium feel ── */
+/* ── Plane SVG — bold aircraft silhouette with dark drop shadow for visibility ── */
 function planeSvg(color: string, heading: number, size = 32, glow = false): string {
   const filterId = glow ? "pg" : "ps";
   const filter = glow
@@ -66,14 +109,13 @@ function planeSvg(color: string, heading: number, size = 32, glow = false): stri
         <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="${color}" flood-opacity="1"/>
         <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.7"/>
       </filter>`
-    : `<filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
-        <feDropShadow dx="0" dy="0" stdDeviation="3" flood-color="#fff" flood-opacity="0.8"/>
-        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.9"/>
+    : `<filter id="${filterId}" x="-50%" y="-50%" width="200%" height="200%">
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.7)" flood-opacity="1"/>
       </filter>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 64 64">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 40 40">
     <defs>${filter}</defs>
-    <g transform="rotate(${heading}, 32, 32)" filter="url(#${filterId})">
-      <path d="M32 6 C33 6 34 8 34 12 L34.5 22 L53 34 L53 37 L34.5 30 L34.5 48 L40 53 L40 55.5 L32 52 L24 55.5 L24 53 L29.5 48 L29.5 30 L11 37 L11 34 L29.5 22 L30 12 C30 8 31 6 32 6Z" fill="${color}" stroke="rgba(20,20,20,0.5)" stroke-width="0.8"/>
+    <g transform="rotate(${heading}, 20, 20)" filter="url(#${filterId})">
+      <path d="M20 3 C21 3 22 5 22 8 L22.3 14 L34 21 L34 24 L22.3 19 L22.3 31 L27 34 L27 36 L20 33.5 L13 36 L13 34 L17.7 31 L17.7 19 L6 24 L6 21 L17.7 14 L18 8 C18 5 19 3 20 3Z" fill="${color}" stroke="rgba(0,0,0,0.4)" stroke-width="1"/>
     </g>
   </svg>`;
 }
@@ -821,7 +863,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     if (!map) return;
 
     _latestFlights = flights;
-    const visible = flights.filter((f) => f.currentLat !== 0 && f.currentLng !== 0);
+    // Only reject Null Island (0,0) — keep flights at equator or prime meridian
+    const visible = flights.filter((f) => !(f.currentLat === 0 && f.currentLng === 0));
     const hasSelection = selectedRef.current !== null;
 
     // Track position history for ground aircraft (taxi trails)
@@ -846,31 +889,29 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     }
     const existing = markersRef.current;
     const zoomedIn = isZoomedInRef.current;
-
-    // Dynamic marker sizing based on camera range (3D) or zoom (2D)
     const range3d = is3dRef.current ? cameraRangeRef.current : null;
-    const computeSize = (baseSize: number, minSize: number) => {
-      if (range3d === null) return baseSize; // 2D mode uses base sizes
-      const clampedRange = Math.max(200000, Math.min(6000000, range3d));
-      const t = (Math.log(clampedRange) - Math.log(200000)) / (Math.log(6000000) - Math.log(200000));
-      return Math.round(minSize + (baseSize - minSize) * (1 - t));
-    };
 
-    // Zoom-based flight filtering: don't render all 3500+ at globe view
-    // At low zoom (globe, range > 8000km): sample ~400 spread evenly
-    // At medium zoom (continent, range 1000-8000km): show all airborne, hide ground
-    // At high zoom (< 1000km): show everything including ground
-    const hideGround = !zoomedIn && range3d !== null && range3d > 500000;
-    const sampleFlights = range3d !== null && range3d > 8000000;
-    let renderList = visible;
-    if (sampleFlights) {
-      const step = Math.max(1, Math.floor(visible.length / 400));
-      const sampled = visible.filter((_, i) => i % step === 0);
-      if (selectedRef.current && !sampled.find(f => f.id === selectedRef.current?.id)) {
-        const sel = visible.find(f => f.id === selectedRef.current?.id);
-        if (sel) sampled.push(sel);
-      }
-      renderList = sampled;
+    // Ground traffic: only show at airport-level zoom (range < 50km ≈ zoom 12)
+    const showGround = range3d !== null ? range3d < GROUND_SHOW_RANGE : zoomedIn;
+
+    // Globe view (range > 8000km): use geo-grid sampling for even global distribution
+    // Mid zoom: show all airborne, hide ground
+    // Airport zoom: show everything
+    const isGlobeView = range3d !== null && range3d > 8000000;
+    let renderList: Flight[];
+    if (isGlobeView) {
+      // Geo-grid sampling: 20x10 grid, up to 12 flights per cell → ~2000 max, evenly spread globally
+      const airborne = visible.filter(f => !isGroundTraffic(f));
+      renderList = sampleByGeoGrid(airborne, 12);
+    } else if (!showGround) {
+      renderList = visible.filter(f => !isGroundTraffic(f));
+    } else {
+      renderList = visible;
+    }
+    // Always include selected flight
+    if (selectedRef.current && !renderList.find(f => f.id === selectedRef.current?.id)) {
+      const sel = visible.find(f => f.id === selectedRef.current?.id);
+      if (sel) renderList.push(sel);
     }
 
     // Clean up markers not in the current render set
@@ -887,20 +928,11 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
 
       for (const f of renderList) {
         const isSel = f.id === selectedRef.current?.id;
-        const isGround = f.onGround;
+        const isGround = isGroundTraffic(f);
 
-        // Skip ground aircraft when zoomed out (unless selected)
-        if (isGround && hideGround && !isSel) {
-          const em = existing.get(f.id);
-          if (em) { try { em.remove?.(); } catch {} existing.delete(f.id); }
-          continue;
-        }
-
-        // Altitude-based color coding (FlightAware-style)
+        // Altitude-based color coding (FlightAware-style: amber for cruise)
         const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
-        const baseSize = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
-        const minIcon = isSel ? MARKER_SIZE_MIN_SELECTED : isGround ? MARKER_SIZE_MIN_GROUND : MARKER_SIZE_MIN_AIRBORNE;
-        const sz = computeSize(baseSize, minIcon);
+        const sz = computeIconSize(range3d, null, isSel, isGround);
         const glow = isSel || (isGround && zoomedIn);
         const altStr = f.altitude >= 1000 ? `FL${Math.round(f.altitude / 100)}` : `${f.altitude} ft`;
         const tooltip = `${f.flightNumber} · ${f.aircraft || ""}\n${f.airline.name}\n${f.origin.code || "?"} → ${f.destination.code || "?"}\n${isGround ? "On Ground" : altStr} · ${f.speed} kts`;
@@ -946,31 +978,13 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     } else {
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-      // In 2D, hide ground when zoom < 8 (same concept as 3D hideGround)
       const zoom2d = map.getZoom ? map.getZoom() : 15;
-      const hideGround2d = !zoomedIn && zoom2d !== null && zoom2d < 8;
-      // In 2D at low zoom, sample flights like in 3D
-      let renderList2d: typeof visible = visible;
-      if (zoom2d !== null && zoom2d < 4) {
-        const step = Math.max(1, Math.floor(visible.length / 400));
-        renderList2d = visible.filter((_, i) => i % step === 0);
-        if (selectedRef.current && !renderList2d.find(f => f.id === selectedRef.current?.id)) {
-          const sel = visible.find(f => f.id === selectedRef.current?.id);
-          if (sel) renderList2d.push(sel);
-        }
-      }
-      for (const f of renderList2d) {
+      // 2D uses the same renderList (already filtered/sampled above)
+      for (const f of renderList) {
         const isSel = f.id === selectedRef.current?.id;
-        const isGround = f.onGround;
-
-        if (isGround && hideGround2d && !isSel) {
-          const em = existing.get(f.id);
-          if (em) { em.setMap?.(null); existing.delete(f.id); }
-          continue;
-        }
-
+        const isGround = isGroundTraffic(f);
         const color = isSel ? "#00e5ff" : hasSelection && !isSel ? "rgba(255,255,255,0.25)" : altitudeColor(f.altitude, isGround);
-        const sz = isSel ? MARKER_SIZE_SELECTED : isGround ? (zoomedIn ? MARKER_SIZE_GROUND_ZOOMED : MARKER_SIZE_GROUND) : MARKER_SIZE_AIRBORNE;
+        const sz = computeIconSize(null, zoom2d, isSel, isGround);
         const mkEl = () => {
           const div = document.createElement("div");
           div.innerHTML = planeSvg(color, f.heading, sz, isSel || (isGround && zoomedIn));

@@ -5,14 +5,18 @@ import { lookupAirline, UNKNOWN_AIRPORT } from "./data";
 let cache: { data: Flight[]; timestamp: number } | null = null;
 const CACHE_TTL = 60000;
 
-const MAX_FLIGHTS = 4000;
+const MAX_FLIGHTS = 6000;
 
 // --- Transform: OpenSky / ADSB.lol state vector format ---
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformStateVector(sv: any[]): Flight | null {
   const lat = sv[6];
   const lng = sv[5];
+  // Only reject if coords are truly missing — don't require callsign
   if (lat == null || lng == null) return null;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  if (lat === 0 && lng === 0) return null;  // Null Island = bad data
 
   const isOnGround = sv[8] === true;
   const callsign = (sv[1] || "").trim();
@@ -22,10 +26,11 @@ function transformStateVector(sv: any[]): Flight | null {
   const geoAltFt = sv[13] != null ? Math.round(sv[13] * 3.28084) : altFt;
   const heading = sv[10] != null ? Math.round(sv[10]) : 0;
   const vertRate = sv[11] != null ? Math.round(sv[11] * 196.85) : null;
+  const hex = (sv[0] || "").trim();
 
   return {
-    id: sv[0] || callsign || `${lat}-${lng}`,
-    flightNumber: callsign || sv[0] || "???",
+    id: hex || callsign || `${lat.toFixed(4)}-${lng.toFixed(4)}`,
+    flightNumber: callsign || hex || "???",
     callsign, airline,
     origin: { ...UNKNOWN_AIRPORT }, destination: { ...UNKNOWN_AIRPORT },
     status: isOnGround ? "taxiing" : "en-route",
@@ -47,7 +52,13 @@ function transformStateVector(sv: any[]): Flight | null {
 function transformADSBxAircraft(ac: any): Flight | null {
   const lat = ac.lat;
   const lng = ac.lon;
+  // Only reject if coords are truly missing — flights with no callsign
+  // but valid hex + position are real (common over oceans)
   if (lat == null || lng == null) return null;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+
   const altRaw = ac.alt_baro;
   const isOnGround = altRaw === "ground" || ac.ground === true || altRaw === 0;
   const altFt = typeof altRaw === "number" ? altRaw : 0;
@@ -57,7 +68,7 @@ function transformADSBxAircraft(ac: any): Flight | null {
   const hex = ac.hex || "";
 
   return {
-    id: hex || callsign || `${lat}-${lng}`,
+    id: hex || callsign || `${lat.toFixed(4)}-${lng.toFixed(4)}`,
     flightNumber: callsign || hex || "???",
     callsign, airline,
     origin: { ...UNKNOWN_AIRPORT }, destination: { ...UNKNOWN_AIRPORT },
@@ -85,27 +96,55 @@ function transformADSBxAircraft(ac: any): Flight | null {
 interface FetchResult { flights: Flight[]; source: string }
 
 // Primary: airplanes.live point queries — reliable, global, parallel fetch
+// 250nm radius per point = ~460km. Must cover oceans and ALL continents.
 const POINT_REGIONS = [
-  { lat: 40, lon: -75 },   // US-NE (NYC/BOS)
-  { lat: 33, lon: -84 },   // US-SE (ATL/MIA)
+  // --- North America ---
+  { lat: 40, lon: -75 },   // US-NE (NYC/BOS/PHL)
+  { lat: 33, lon: -84 },   // US-SE (ATL/MIA/CLT)
   { lat: 42, lon: -95 },   // US-Central (ORD/MSP/DEN)
-  { lat: 35, lon: -118 },  // US-West (LAX/SFO/SEA)
+  { lat: 35, lon: -118 },  // US-West (LAX/SFO)
+  { lat: 48, lon: -122 },  // Pacific NW (SEA/PDX/YVR)
+  { lat: 48, lon: -60 },   // Canada-East (YYZ/YUL)
+  { lat: 30, lon: -97 },   // US-South (DFW/IAH/AUS)
+  { lat: 20, lon: -100 },  // Mexico (MEX/CUN)
+  // --- Europe ---
   { lat: 52, lon: -1 },    // UK/Ireland (LHR/DUB)
   { lat: 49, lon: 8 },     // Europe-C (FRA/CDG/AMS)
   { lat: 42, lon: 20 },    // Europe-SE (IST/ATH)
   { lat: 60, lon: 15 },    // Scandinavia
+  { lat: 40, lon: -4 },    // Iberia (MAD/BCN/LIS)
+  { lat: 45, lon: 12 },    // Italy (FCO/MXP)
+  // --- Atlantic Ocean (transatlantic routes) ---
+  { lat: 55, lon: -30 },   // N-Atlantic tracks (NATS west)
+  { lat: 50, lon: -15 },   // N-Atlantic tracks (NATS east)
+  { lat: 45, lon: -45 },   // Mid-Atlantic
+  { lat: 30, lon: -50 },   // S-Atlantic / Caribbean routes
+  // --- Middle East & Africa ---
   { lat: 25, lon: 55 },    // Middle-East (DXB/DOH)
-  { lat: 35, lon: 140 },   // East-Asia (HND/ICN)
+  { lat: 30, lon: 32 },    // Egypt/North Africa (CAI)
+  { lat: 5, lon: 3 },      // West Africa (LOS)
+  { lat: -4, lon: 37 },    // East Africa (NBO/DAR)
+  { lat: -26, lon: 28 },   // South Africa (JNB)
+  // --- Asia ---
+  { lat: 35, lon: 140 },   // East-Asia (HND/ICN/NRT)
+  { lat: 25, lon: 121 },   // Taiwan / South China (TPE/HKG)
   { lat: 1, lon: 104 },    // SE-Asia (SIN/BKK)
   { lat: 25, lon: 80 },    // India (DEL/BOM)
-  { lat: 55, lon: -30 },   // N-Atlantic tracks
-  { lat: -25, lon: -46 },  // S-America (GRU)
-  { lat: -33, lon: 151 },  // Australia (SYD)
-  { lat: 48, lon: -60 },   // Canada-East (YYZ/YUL)
+  { lat: 40, lon: 70 },    // Central Asia (TAS/ALM)
+  { lat: 55, lon: 80 },    // Russia/Siberia
+  // --- Pacific Ocean ---
+  { lat: 35, lon: 170 },   // N-Pacific (Japan → US routes)
+  { lat: 25, lon: -155 },  // Hawaii / Central Pacific
+  { lat: 40, lon: -140 },  // NE Pacific (transpacific routes)
+  // --- South America & Oceania ---
+  { lat: -25, lon: -46 },  // S-America (GRU/GIG)
+  { lat: -5, lon: -60 },   // Amazon / N-South America
+  { lat: -33, lon: 151 },  // Australia (SYD/MEL)
+  { lat: -37, lon: 175 },  // New Zealand (AKL)
 ];
 
 async function fetchAirplanesLive(): Promise<FetchResult> {
-  console.log("[SkyWay] Fetching airplanes.live (parallel, 16 regions)...");
+  console.log(`[SkyWay] Fetching airplanes.live (parallel, ${POINT_REGIONS.length} regions)...`);
   const seen = new Set<string>();
   const allFlights: Flight[] = [];
 
@@ -129,8 +168,6 @@ async function fetchAirplanesLive(): Promise<FetchResult> {
       if (allFlights.length >= MAX_FLIGHTS) break;
       const mapped = transformADSBxAircraft(ac);
       if (!mapped) continue;
-      // Keep ground traffic (onGround) + airborne above 1000ft
-      if (!mapped.onGround && mapped.altitude < 1000) continue;
       if (seen.has(mapped.id)) continue;
       seen.add(mapped.id);
       allFlights.push(mapped);
@@ -163,7 +200,6 @@ async function fetchGlobalSource(source: { name: string; url: string }): Promise
     if (flights.length >= MAX_FLIGHTS) break;
     const mapped = transformStateVector(sv);
     if (!mapped) continue;
-    if (!mapped.onGround && mapped.altitude < 1000) continue;
     flights.push(mapped);
   }
   if (flights.length < 500) throw new Error(`Only ${flights.length} flights`);
