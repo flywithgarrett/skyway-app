@@ -458,33 +458,34 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => { if (animFrame) cancelAnimationFrame(animFrame); };
   }, [mapReady, updateAirportPulse]);
 
-  /* ══ Day/Night — dynamic CSS filter based on sun position ══ */
-  // Instead of a canvas overlay (which can't project onto a 3D globe correctly),
-  // we dynamically adjust the CSS brightness/saturation filter on the map itself
-  // based on whether the camera is looking at the day or night side.
-  // This gives a clean, artifact-free day/night effect that works at any zoom.
-  const dayNightStyleRef = useRef<HTMLStyleElement | null>(null);
+  /* ══ Day/Night — screen-space gradient overlay ══ */
+  // Uses a CSS gradient div positioned over the map.
+  // Computes the sun's direction relative to camera center,
+  // then draws a linear gradient from day→night across the screen
+  // aligned to the terminator direction. No per-pixel computation.
+  const dayNightDivRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
     if (!map || !is3dRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    let div = dayNightDivRef.current;
+    if (!div) {
+      div = document.createElement("div");
+      div.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:1;transition:opacity 0.5s;";
+      container.parentElement?.appendChild(div);
+      dayNightDivRef.current = div;
+    }
 
     let animFrame: number | null = null;
     let cancelled = false;
-    let lastFilter = "";
     const toRad = (d: number) => d * Math.PI / 180;
 
-    // Create a style element we'll update dynamically
-    let style = dayNightStyleRef.current;
-    if (!style) {
-      style = document.createElement("style");
-      document.head.appendChild(style);
-      dayNightStyleRef.current = style;
-    }
-
     const update = () => {
-      if (cancelled) return;
+      if (cancelled || !div) return;
 
       const now = new Date();
       const sun = getSunPosition(now);
@@ -500,60 +501,52 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         camRange = map.range ?? 12000000;
       } catch {}
 
-      // Calculate solar angle at camera center
+      // Fade out when zoomed in to airport level
+      const zoomFade = Math.max(0, Math.min(1, (camRange - 300000) / 2000000));
+      if (zoomFade < 0.01) {
+        div.style.opacity = "0";
+        animFrame = requestAnimationFrame(update);
+        return;
+      }
+      div.style.opacity = "1";
+
+      // Sun direction relative to camera center in screen-space
+      // deltaLng > 0 means sun is to the right of camera center
+      let deltaLng = sun.lng - camLng;
+      if (deltaLng > 180) deltaLng -= 360;
+      if (deltaLng < -180) deltaLng += 360;
+      const deltaLat = sun.lat - camLat;
+
+      // Convert to screen angle (sun direction)
+      // On screen: positive deltaLng = rightward, positive deltaLat = upward
+      const sunAngle = Math.atan2(-deltaLat, deltaLng); // radians, 0 = right
+
+      // How much of the visible globe is on the night side?
+      // cosAngle at camera center: >0 = day, <0 = night
       const φ = toRad(camLat);
       const λ = toRad(camLng);
       const cosAngle = Math.sin(sunLatRad) * Math.sin(φ) +
         Math.cos(sunLatRad) * Math.cos(φ) * Math.cos(λ - sunLngRad);
 
-      // cosAngle: 1 = directly facing sun, -1 = directly away from sun
-      // Twilight zone: -0.1 to 0.1
+      // The gradient position: how far along the gradient is the terminator
+      // cosAngle = 1 → center is full day, terminator far to one side
+      // cosAngle = 0 → terminator at center
+      // cosAngle = -1 → center is full night, terminator far to other side
+      // Map to a percentage (0% = sun side edge, 100% = night side edge)
+      const terminatorPos = Math.max(5, Math.min(95, 50 - cosAngle * 45));
 
-      // Daytime: bright & saturated. Night: very dark & desaturated
-      let brightness: number, saturation: number, contrast: number;
+      // Gradient direction perpendicular to the terminator line
+      const gradAngle = (sunAngle * 180 / Math.PI) + 90; // degrees
 
-      if (cosAngle > 0.1) {
-        // Full daytime — show bright satellite imagery
-        brightness = 0.85;
-        saturation = 0.7;
-        contrast = 1.1;
-      } else if (cosAngle > -0.1) {
-        // Twilight transition — smooth interpolation
-        const t = (0.1 - cosAngle) / 0.2;
-        const s = t * t * (3 - 2 * t); // smoothstep
-        brightness = 0.85 - s * 0.55; // 0.85 → 0.30
-        saturation = 0.7 - s * 0.55;  // 0.7 → 0.15
-        contrast = 1.1 + s * 0.1;     // 1.1 → 1.2
-      } else {
-        // Night — very dark, desaturated, high contrast (like competitor)
-        brightness = 0.30;
-        saturation = 0.15;
-        contrast = 1.2;
-      }
+      // Build the gradient: transparent on day side, dark on night side
+      const nightColor = `rgba(2, 4, 16, ${(0.78 * zoomFade).toFixed(2)})`;
+      const twilightColor = `rgba(2, 4, 16, ${(0.35 * zoomFade).toFixed(2)})`;
 
-      // When zoomed in close (airport level), go brighter to show Google Maps detail
-      if (camRange < 500000) {
-        const zoomBright = Math.max(0, 1 - camRange / 500000);
-        brightness = brightness + (0.75 - brightness) * zoomBright;
-        saturation = saturation + (0.6 - saturation) * zoomBright;
-        contrast = contrast + (1.1 - contrast) * zoomBright;
-      }
-
-      const filter = `brightness(${brightness.toFixed(3)}) saturate(${saturation.toFixed(3)}) contrast(${contrast.toFixed(3)})`;
-
-      // Only update DOM if filter changed (avoid unnecessary reflows)
-      if (filter !== lastFilter) {
-        lastFilter = filter;
-        style!.textContent = `
-          .skyway-map-container canvas,
-          .skyway-map-container .gm-style > div > div > div > div > canvas,
-          .skyway-map-container iframe,
-          .skyway-map-container img:not([data-skyway-marker]) {
-            filter: ${filter};
-            transition: filter 2s ease;
-          }
-        `;
-      }
+      div.style.background = `linear-gradient(${gradAngle.toFixed(1)}deg,
+        transparent ${(terminatorPos - 25).toFixed(1)}%,
+        ${twilightColor} ${(terminatorPos - 5).toFixed(1)}%,
+        ${nightColor} ${(terminatorPos + 15).toFixed(1)}%,
+        ${nightColor} 100%)`;
 
       animFrame = requestAnimationFrame(update);
     };
@@ -563,17 +556,8 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
     return () => {
       cancelled = true;
       if (animFrame) cancelAnimationFrame(animFrame);
-      // Restore default filter
-      if (style) {
-        style.textContent = `
-          .skyway-map-container canvas,
-          .skyway-map-container .gm-style > div > div > div > div > canvas,
-          .skyway-map-container iframe,
-          .skyway-map-container img:not([data-skyway-marker]) {
-            filter: brightness(0.55) saturate(0.5) contrast(1.15);
-          }
-        `;
-      }
+      if (div && div.parentElement) div.parentElement.removeChild(div);
+      dayNightDivRef.current = null;
     };
   }, [mapReady]);
 
