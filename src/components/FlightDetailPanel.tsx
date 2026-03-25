@@ -1,7 +1,7 @@
 "use client";
 
 import { Flight } from "@/lib/types";
-import { FlightDetail } from "@/lib/api";
+import { FlightDetail, useDelayPrediction, DelayPrediction, InboundLeg } from "@/lib/api";
 
 interface FlightDetailPanelProps {
   flight: Flight;
@@ -73,6 +73,254 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   unknown: { label: "Tracking", color: "#94a3b8" },
 };
 
+/* ── Delay Prediction Banner ── */
+function DelayBanner({ prediction }: { prediction: DelayPrediction }) {
+  return (
+    <div style={{ padding: "0 20px 16px" }}>
+      <div style={{
+        background: "rgba(255,59,48,0.10)",
+        border: "1px solid rgba(255,59,48,0.25)",
+        borderRadius: 14,
+        padding: "14px 16px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 14 }}>⚠</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#FF3B30", letterSpacing: "-0.01em" }}>
+            RUNNING LATE
+          </span>
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", marginBottom: 6 }}>
+          {prediction.delayMinutes}m delay predicted
+        </div>
+        {prediction.reasons.map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+            <div style={{ width: 4, height: 4, borderRadius: 2, background: "#FF3B30", flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>
+              {r.label} — +{r.minutes}m
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Where's My Plane? Section ── */
+function WheresMyPlane({ flight, prediction, aircraft, registration }: {
+  flight: Flight; prediction: DelayPrediction; aircraft: string | null; registration: string | null;
+}) {
+  const inbound = prediction.inboundChain[0];
+  if (!inbound) return null;
+
+  const acType = aircraft || prediction.aircraft.type;
+  const reg = registration || prediction.aircraft.registration;
+
+  // Compute inbound status text
+  let inboundStatus = "";
+  if (inbound.actualArr) {
+    inboundStatus = "Arrived at gate";
+  } else if (inbound.estimatedArr) {
+    const mins = Math.max(0, Math.round((new Date(inbound.estimatedArr).getTime() - Date.now()) / 60000));
+    if (mins <= 0) inboundStatus = "Landing now";
+    else {
+      const h = Math.floor(mins / 60);
+      inboundStatus = h > 0 ? `Landing in ${h}h ${mins % 60}m` : `Landing in ${mins}m`;
+    }
+  } else {
+    inboundStatus = inbound.status || "En route";
+  }
+
+  return (
+    <div style={{ padding: "0 20px 16px" }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.30)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>
+        Where&apos;s My Plane?
+      </div>
+      <div style={{
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 14,
+        padding: 16,
+      }}>
+        {/* Aircraft info */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12,
+            background: "rgba(10,132,255,0.10)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 22,
+          }}>✈️</div>
+          <div>
+            {acType && (
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>
+                {formatAircraftType(acType)}
+              </div>
+            )}
+            {reg && (
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>
+                {reg}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Inbound flight info */}
+        <div style={{
+          background: "rgba(255,255,255,0.03)",
+          borderRadius: 10,
+          padding: "10px 12px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
+              Inbound: {inbound.flightNumber}
+            </span>
+            {inbound.arrivalDelay > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#FF3B30" }}>
+                {inbound.arrivalDelay}m late
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.40)" }}>
+            {inbound.origin.code} → {inbound.destination.code}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: inbound.actualArr ? "#34C759" : "#0A84FF", marginTop: 4 }}>
+            {inboundStatus}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Inbound Chain Timeline ── */
+function InboundChainView({ flight, prediction }: { flight: Flight; prediction: DelayPrediction }) {
+  const chain = prediction.inboundChain;
+  if (chain.length === 0) return null;
+
+  return (
+    <div style={{ padding: "0 20px 16px" }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.30)", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>
+        Aircraft Route Chain
+      </div>
+      <div style={{
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.06)",
+        borderRadius: 14,
+        padding: "14px 16px",
+      }}>
+        {/* Current flight at top */}
+        <ChainLeg
+          label={flight.flightNumber}
+          origin={flight.origin.code}
+          destination={flight.destination.code}
+          statusText={flight.status === "en-route" ? "Current flight" : flight.status}
+          delayMin={prediction.delayMinutes}
+          isCurrent
+          isFirst
+        />
+
+        {/* Inbound chain legs */}
+        {chain.map((leg, i) => {
+          let statusText = "";
+          if (leg.actualArr) {
+            try {
+              const d = new Date(leg.actualArr);
+              statusText = `Arrived ${d.getHours() % 12 || 12}:${d.getMinutes().toString().padStart(2, "0")} ${d.getHours() >= 12 ? "PM" : "AM"}`;
+            } catch { statusText = "Arrived"; }
+          } else if (leg.estimatedArr) {
+            const mins = Math.max(0, Math.round((new Date(leg.estimatedArr).getTime() - Date.now()) / 60000));
+            const h = Math.floor(mins / 60);
+            statusText = h > 0 ? `Landing in ${h}h ${mins % 60}m` : `Landing in ${mins}m`;
+          } else {
+            statusText = leg.status;
+          }
+          return (
+            <ChainLeg
+              key={i}
+              label={leg.flightNumber}
+              origin={leg.origin.code}
+              destination={leg.destination.code}
+              statusText={statusText}
+              delayMin={leg.arrivalDelay}
+              isCurrent={false}
+              isFirst={false}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ChainLeg({ label, origin, destination, statusText, delayMin, isCurrent, isFirst }: {
+  label: string; origin: string; destination: string; statusText: string;
+  delayMin: number; isCurrent: boolean; isFirst: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12, position: "relative" }}>
+      {/* Timeline line + dot */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 16, flexShrink: 0 }}>
+        {!isFirst && (
+          <div style={{ width: 1, height: 8, background: "rgba(255,255,255,0.10)" }} />
+        )}
+        <div style={{
+          width: isCurrent ? 10 : 8,
+          height: isCurrent ? 10 : 8,
+          borderRadius: "50%",
+          background: isCurrent ? "#0A84FF" : delayMin > 0 ? "#FF3B30" : "#34C759",
+          border: isCurrent ? "2px solid rgba(10,132,255,0.3)" : "none",
+          flexShrink: 0,
+        }} />
+        <div style={{ width: 1, flex: 1, background: "rgba(255,255,255,0.06)" }} />
+      </div>
+
+      {/* Content */}
+      <div style={{ paddingBottom: 14, flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: isCurrent ? "#fff" : "rgba(255,255,255,0.70)" }}>
+            {label}
+          </span>
+          {delayMin > 0 && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, color: "#FF3B30",
+              background: "rgba(255,59,48,0.10)", padding: "2px 8px", borderRadius: 6,
+            }}>
+              {delayMin}m {isCurrent ? "Delay Predicted" : "Late"}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.40)", marginTop: 2 }}>
+          {origin} → {destination}
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", marginTop: 2 }}>
+          {statusText}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatAircraftType(code: string): string {
+  const map: Record<string, string> = {
+    "A319": "Airbus A319", "A320": "Airbus A320", "A321": "Airbus A321neo",
+    "A332": "Airbus A330-200", "A333": "Airbus A330-300", "A339": "Airbus A330-900neo",
+    "A346": "Airbus A340-600", "A350": "Airbus A350",
+    "A359": "Airbus A350-900", "A35K": "Airbus A350-1000",
+    "A388": "Airbus A380-800",
+    "B737": "Boeing 737", "B738": "Boeing 737-800", "B739": "Boeing 737-900",
+    "B38M": "Boeing 737 MAX 8", "B39M": "Boeing 737 MAX 9",
+    "B744": "Boeing 747-400", "B748": "Boeing 747-8",
+    "B752": "Boeing 757-200", "B753": "Boeing 757-300",
+    "B763": "Boeing 767-300", "B764": "Boeing 767-400",
+    "B772": "Boeing 777-200", "B77L": "Boeing 777-200LR",
+    "B77W": "Boeing 777-300ER", "B778": "Boeing 777X",
+    "B788": "Boeing 787-8", "B789": "Boeing 787-9", "B78X": "Boeing 787-10",
+    "E170": "Embraer E170", "E175": "Embraer E175",
+    "E190": "Embraer E190", "E195": "Embraer E195",
+    "CRJ2": "Bombardier CRJ-200", "CRJ7": "Bombardier CRJ-700", "CRJ9": "Bombardier CRJ-900",
+  };
+  return map[code.toUpperCase()] || code;
+}
+
 /* ── Component ── */
 export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap }: FlightDetailPanelProps) {
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
@@ -85,6 +333,15 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
   const arrTime = flight.estimatedArr || flight.scheduledArr;
   const statusInfo = STATUS_MAP[flight.status] || STATUS_MAP["unknown"];
   const dateStr = fmtDate(depTime);
+
+  // Delay prediction + inbound chain
+  const depLat = detail?.origin?.lat || 0;
+  const depLng = detail?.origin?.lng || 0;
+  const arrLat = detail?.destination?.lat || 0;
+  const arrLng = detail?.destination?.lng || 0;
+  const { prediction } = useDelayPrediction(
+    flight.callsign || null, registration, depLat, depLng, arrLat, arrLng
+  );
 
   return (
     <div className="fixed top-0 right-0 bottom-0 z-40 w-full sm:w-96 md:w-[420px] flex flex-col"
@@ -452,6 +709,21 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
                 )}
               </div>
             </div>
+          )}
+
+          {/* ── Delay Prediction Banner ── */}
+          {prediction && prediction.delayMinutes > 0 && (
+            <DelayBanner prediction={prediction} />
+          )}
+
+          {/* ── Where's My Plane? ── */}
+          {prediction && prediction.inboundChain.length > 0 && (
+            <WheresMyPlane flight={flight} prediction={prediction} aircraft={aircraft} registration={registration} />
+          )}
+
+          {/* ── Inbound Chain ── */}
+          {prediction && prediction.inboundChain.length > 0 && (
+            <InboundChainView flight={flight} prediction={prediction} />
           )}
 
           {/* ── Filed Flight Plan ── */}

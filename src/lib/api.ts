@@ -131,3 +131,74 @@ export function useFlightDetails(callsign: string | null) {
 
   return { detail, loading, error };
 }
+
+// --- Delay Prediction + Where's My Plane (on-demand per flight) ---
+
+export interface InboundLeg {
+  flightNumber: string;
+  origin: { code: string; name: string; city: string };
+  destination: { code: string; name: string; city: string };
+  status: string;
+  scheduledArr: string | null;
+  estimatedArr: string | null;
+  actualArr: string | null;
+  arrivalDelay: number;
+  aircraft: string | null;
+  registration: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface DelayPrediction {
+  aircraft: {
+    type: string | null;
+    registration: string | null;
+    age: string | null;
+    imageUrl: string | null;
+  };
+  inboundChain: InboundLeg[];
+  delayMinutes: number;
+  reasons: { type: string; label: string; minutes: number }[];
+  weather: { airport: string; condition: string; windKts: number | null; visibility: number | null; severe: boolean }[];
+}
+
+export function useDelayPrediction(
+  callsign: string | null,
+  registration: string | null,
+  depLat: number,
+  depLng: number,
+  arrLat: number,
+  arrLng: number,
+) {
+  const [prediction, setPrediction] = useState<DelayPrediction | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!callsign) { setPrediction(null); return; }
+
+    let cancelled = false;
+    setLoading(true);
+
+    const params = new URLSearchParams({ callsign });
+    if (registration) params.set("registration", registration);
+    if (depLat) params.set("depLat", String(depLat));
+    if (depLng) params.set("depLng", String(depLng));
+    if (arrLat) params.set("arrLat", String(arrLat));
+    if (arrLng) params.set("arrLng", String(arrLng));
+
+    fetch(`/api/flight-predict?${params}`)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          const json = await res.json();
+          setPrediction(json as DelayPrediction);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [callsign, registration, depLat, depLng, arrLat, arrLng]);
+
+  return { prediction, loading };
+}
