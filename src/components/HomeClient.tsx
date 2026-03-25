@@ -318,8 +318,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         />
       )}
 
-      {/* User account button — top right */}
-      <div style={{ position: "fixed", top: 12, right: 16, zIndex: 25 }}>
+      {/* User account button — inside top nav bar */}
+      <div style={{ position: "fixed", top: 10, right: 16, zIndex: 1001 }}>
         {user ? (
           <button
             onClick={signOut}

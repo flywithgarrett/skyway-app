@@ -22,85 +22,87 @@ export default function FlightListSidebar({ flights }: AviationStatsProps) {
     return { airborne: airborne.length, onGround: onGround.length, avgAlt, avgSpeed, maxAlt, types: types.size, airlines: airlines.size, emergencies: emergencies.length, highest, fastest };
   }, [flights]);
 
+  const statItems: [string, string][] = [
+    ["AVG ALT", stats.avgAlt >= 1000 ? `FL${Math.round(stats.avgAlt / 100)}` : `${stats.avgAlt} ft`],
+    ["AVG SPD", `${stats.avgSpeed} kts`],
+    ["AIRLINES", String(stats.airlines)],
+    ["ACFT TYPES", String(stats.types)],
+    ["ON GROUND", String(stats.onGround)],
+    ["MAX ALT", stats.maxAlt >= 1000 ? `FL${Math.round(stats.maxAlt / 100)}` : `${stats.maxAlt} ft`],
+  ];
+
   return (
-    <div className="hidden sm:block" style={{ position: "absolute", top: 62, left: 12, zIndex: 20, pointerEvents: "auto", width: 220 }}>
+    <div style={{
+      position: "fixed", top: 64, left: 16,
+      background: "rgba(17,17,24,0.88)",
+      backdropFilter: "blur(20px) saturate(180%)",
+      WebkitBackdropFilter: "blur(20px) saturate(180%)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 16, padding: 16,
+      width: 184, zIndex: 100,
+      fontFamily: "-apple-system, 'SF Pro Text', system-ui, sans-serif",
+    }}>
+      {/* ACTIVE FLIGHTS */}
       <div style={{
-        background: "rgba(17,17,24,0.85)",
-        backdropFilter: "blur(20px) saturate(180%)",
-        WebkitBackdropFilter: "blur(20px) saturate(180%)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 16,
-        padding: 16,
-        overflow: "hidden",
-      }}>
-        {/* ACTIVE FLIGHTS label */}
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 6 }}>
-          ACTIVE FLIGHTS
-        </div>
+        fontSize: 10, fontWeight: 600, letterSpacing: "0.08em",
+        textTransform: "uppercase", color: "rgba(255,255,255,0.35)", marginBottom: 4,
+      }}>Active Flights</div>
 
-        {/* Big number */}
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontSize: 36, fontWeight: 700, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-            {stats.airborne.toLocaleString()}
-          </span>
-          <span style={{ fontSize: 12, color: "#34C759", fontWeight: 500 }}>airborne</span>
-        </div>
-
-        {/* Stats grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
-          <StatItem label="AVG ALT" value={stats.avgAlt >= 1000 ? `FL${Math.round(stats.avgAlt / 100)}` : `${stats.avgAlt} ft`} />
-          <StatItem label="AVG SPD" value={`${stats.avgSpeed} kts`} />
-          <StatItem label="AIRLINES" value={String(stats.airlines)} />
-          <StatItem label="ACFT TYPES" value={String(stats.types)} />
-          <StatItem label="ON GROUND" value={String(stats.onGround)} />
-          <StatItem label="MAX ALT" value={stats.maxAlt >= 1000 ? `FL${Math.round(stats.maxAlt / 100)}` : `${stats.maxAlt} ft`} />
-        </div>
-
-        {/* Emergency status */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: 3,
-            background: stats.emergencies > 0 ? "#FF3B30" : "#34C759",
-            boxShadow: stats.emergencies > 0 ? "0 0 6px rgba(255,59,48,0.6)" : "0 0 6px rgba(52,199,89,0.4)",
-            animation: stats.emergencies > 0 ? "emergencyPulse 1.5s ease-in-out infinite" : "none",
-          }} />
-          <span style={{
-            fontSize: 11, fontWeight: 600,
-            color: stats.emergencies > 0 ? "#FF3B30" : "#34C759",
-          }}>
-            {stats.emergencies > 0 ? `${stats.emergencies} EMERGENCY` : "NO EMERGENCIES"}
-          </span>
-        </div>
-
-        {/* Notable flights */}
-        {stats.highest && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 4 }}>HIGHEST</div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#0A84FF", fontVariantNumeric: "tabular-nums" }}>{stats.highest.callsign || stats.highest.flightNumber}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>FL{Math.round(stats.highest.altitude / 100)}</span>
-            </div>
-            {stats.fastest && stats.fastest.id !== stats.highest.id && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 4, marginTop: 8 }}>FASTEST</div>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0A84FF", fontVariantNumeric: "tabular-nums" }}>{stats.fastest.callsign || stats.fastest.flightNumber}</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>{stats.fastest.speed} kts</span>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontSize: 36, fontWeight: 700, color: "#FFFFFF", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+          {stats.airborne.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 12, color: "#34C759" }}>airborne</span>
       </div>
-    </div>
-  );
-}
 
-function StatItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)" }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      {/* Stats grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
+        {statItems.map(([label, value]) => (
+          <div key={label}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.30)", letterSpacing: "0.06em", textTransform: "uppercase" }}>{label}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#FFFFFF", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Emergency status */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6,
+        marginTop: 14, paddingTop: 14,
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+      }}>
+        <span style={{
+          width: 7, height: 7, borderRadius: "50%",
+          background: stats.emergencies > 0 ? "#FF3B30" : "#34C759",
+          flexShrink: 0, display: "inline-block",
+        }} />
+        <span style={{
+          fontSize: 11, fontWeight: 600, letterSpacing: "0.02em",
+          color: stats.emergencies > 0 ? "#FF3B30" : "#34C759",
+        }}>
+          {stats.emergencies > 0 ? `${stats.emergencies} EMERGENCY` : "NO EMERGENCIES"}
+        </span>
+      </div>
+
+      {/* Notable flights */}
+      {stats.highest && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 4 }}>HIGHEST</div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#0A84FF", fontVariantNumeric: "tabular-nums" }}>{stats.highest.callsign || stats.highest.flightNumber}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>FL{Math.round(stats.highest.altitude / 100)}</span>
+          </div>
+          {stats.fastest && stats.fastest.id !== stats.highest.id && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(255,255,255,0.30)", marginBottom: 4, marginTop: 8 }}>FASTEST</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#0A84FF", fontVariantNumeric: "tabular-nums" }}>{stats.fastest.callsign || stats.fastest.flightNumber}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.55)", fontVariantNumeric: "tabular-nums" }}>{stats.fastest.speed} kts</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
