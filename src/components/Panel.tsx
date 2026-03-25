@@ -8,6 +8,9 @@ interface PanelProps {
   detail: FlightDetail | null;
   detailLoading: boolean;
   onClose: () => void;
+  isSaved?: boolean;
+  onSave?: () => void;
+  onUnsave?: () => void;
   onViewDetails: (flight: Flight) => void;
 }
 
@@ -78,7 +81,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export default function Panel({ flight, detail, detailLoading, onClose, onViewDetails }: PanelProps) {
+export default function Panel({ flight, detail, detailLoading, onClose, onViewDetails, isSaved, onSave, onUnsave }: PanelProps) {
   const hasRoute = flight.origin.code !== "---" && flight.destination.code !== "---";
   const progressPercent = flight.progress || 0;
   const depTime = flight.actualDep || flight.scheduledDep;
@@ -118,15 +121,32 @@ export default function Panel({ flight, detail, detailLoading, onClose, onViewDe
               </div>
             </div>
           </div>
-          <button onClick={onClose} style={{
-            background: "rgba(255,255,255,0.06)", border: "none", width: 28, height: 28,
-            borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer", color: "rgba(255,255,255,0.3)", transition: "background 0.15s",
-          }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Save/unsave button */}
+            {(onSave || onUnsave) && (
+              <button onClick={isSaved ? onUnsave : onSave} style={{
+                background: isSaved ? "rgba(10,132,255,0.15)" : "rgba(255,255,255,0.06)",
+                border: isSaved ? "1px solid rgba(10,132,255,0.3)" : "none",
+                width: 28, height: 28, borderRadius: 8,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", color: isSaved ? "#0A84FF" : "rgba(255,255,255,0.3)",
+                transition: "all 0.15s",
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+            )}
+            <button onClick={onClose} style={{
+              background: "rgba(255,255,255,0.06)", border: "none", width: 28, height: 28,
+              borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer", color: "rgba(255,255,255,0.3)", transition: "background 0.15s",
+            }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Status line */}

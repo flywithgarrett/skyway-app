@@ -10,6 +10,7 @@ import FlightListSidebar from "@/components/FlightListSidebar";
 import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
 import NotificationToast from "@/components/NotificationToast";
+import AuthModal from "@/components/AuthModal";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
 import AirportView from "@/components/AirportView";
@@ -19,6 +20,7 @@ import type { ATCAlert } from "@/hooks/useATCFeed";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
 import { useFlightAlerts, useATCAdvisories } from "@/lib/alerts";
+import { useAuth, useSavedFlights } from "@/lib/supabase/hooks";
 import { Flight, Airport } from "@/lib/types";
 
 interface ISSPosition {
@@ -74,9 +76,14 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [selectedFlight, setSelectedFlight] = useState<Flight | null>(null);
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
   const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
+
+  // Auth + saved flights
+  const { user, signInWithEmail, signUpWithEmail, signOut } = useAuth();
+  const { savedFlights, saveFlight, unsaveFlight, isSaved } = useSavedFlights(user?.id ?? null);
 
   // ATC feed state
   const [atcAirport, setAtcAirport] = useState<string | null>(null);
@@ -195,6 +202,18 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           detailLoading={detailLoading}
           onClose={() => setSelectedFlight(null)}
           onViewDetails={(f) => setDetailFlight(f)}
+          isSaved={isSaved(enrichedSelectedFlight.callsign)}
+          onSave={user ? () => saveFlight({
+            callsign: enrichedSelectedFlight.callsign,
+            flightNumber: enrichedSelectedFlight.flightNumber,
+            airlineCode: enrichedSelectedFlight.airline.code,
+            airlineName: enrichedSelectedFlight.airline.name,
+            originCode: enrichedSelectedFlight.origin.code,
+            destinationCode: enrichedSelectedFlight.destination.code,
+            aircraftType: enrichedSelectedFlight.aircraft || undefined,
+            registration: enrichedSelectedFlight.registration || undefined,
+          }) : () => setAuthOpen(true)}
+          onUnsave={() => unsaveFlight(enrichedSelectedFlight.callsign)}
         />
       )}
 
@@ -283,6 +302,46 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
+
+      {/* Auth modal */}
+      {authOpen && (
+        <AuthModal
+          onClose={() => setAuthOpen(false)}
+          onSignIn={signInWithEmail}
+          onSignUp={signUpWithEmail}
+        />
+      )}
+
+      {/* User account button — top right */}
+      <div style={{ position: "fixed", top: 12, right: 16, zIndex: 25 }}>
+        {user ? (
+          <button
+            onClick={signOut}
+            style={{
+              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 10, padding: "6px 12px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6,
+              fontSize: 11, color: "rgba(255,255,255,0.55)", fontWeight: 500,
+            }}
+          >
+            <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#0A84FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff" }}>
+              {(user.email || "U")[0].toUpperCase()}
+            </div>
+            Sign Out
+          </button>
+        ) : (
+          <button
+            onClick={() => setAuthOpen(true)}
+            style={{
+              background: "#0A84FF", border: "none",
+              borderRadius: 10, padding: "7px 14px", cursor: "pointer",
+              fontSize: 12, fontWeight: 600, color: "#fff",
+            }}
+          >
+            Sign In
+          </button>
+        )}
+      </div>
 
       {/* Notification toasts */}
       <NotificationToast
