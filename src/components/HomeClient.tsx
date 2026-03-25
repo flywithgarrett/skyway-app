@@ -241,15 +241,15 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
             border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
             display: "flex", alignItems: "center", gap: 8,
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.7)"; e.currentTarget.style.borderColor = "rgba(52,211,153,0.25)"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.7)"; e.currentTarget.style.borderColor = "rgba(52,199,89,0.25)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.55)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
         >
-          <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34d399", boxShadow: "0 0 6px rgba(52,211,153,0.6)", animation: "pulse 2s ease-in-out infinite" }} />
+          <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34C759", boxShadow: "0 0 6px rgba(52,199,89,0.6)", animation: "pulse 2s ease-in-out infinite" }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.1em" }}>ISS</span>
           <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", fontFamily: "'SF Mono', Menlo, monospace" }}>
             {issPosition.lat.toFixed(1)}° {issPosition.lng.toFixed(1)}°
           </span>
-          <span style={{ fontSize: 9, color: "rgba(52,211,153,0.6)", fontFamily: "'SF Mono', Menlo, monospace" }}>
+          <span style={{ fontSize: 9, color: "rgba(52,199,89,0.6)", fontFamily: "'SF Mono', Menlo, monospace" }}>
             {issPosition.alt.toFixed(0)}km
           </span>
         </button>

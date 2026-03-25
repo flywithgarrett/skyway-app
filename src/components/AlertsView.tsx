@@ -21,7 +21,7 @@ function timeAgo(iso: string): string {
 
 function SquawkBadge({ type }: { type: EmergencyFlight["emergencyType"] }) {
   const labels: Record<string, { label: string; color: string; bg: string }> = {
-    squawk7700: { label: "SQUAWK 7700", color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
+    squawk7700: { label: "SQUAWK 7700", color: "#FF3B30", bg: "rgba(255,59,48,0.12)" },
     squawk7600: { label: "SQUAWK 7600", color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
     squawk7500: { label: "SQUAWK 7500", color: "#dc2626", bg: "rgba(220,38,38,0.15)" },
   };
@@ -56,14 +56,14 @@ function EmergencyCard({
       className="w-full text-left rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.01] emergency-card"
       style={{
         background: resolved
-          ? "rgba(10, 18, 32, 0.5)"
-          : "rgba(239, 68, 68, 0.04)",
+          ? "rgba(17,17,24, 0.5)"
+          : "rgba(255,59,48, 0.04)",
         border: resolved
           ? "1px solid rgba(255,255,255,0.04)"
-          : "1px solid rgba(239, 68, 68, 0.12)",
+          : "1px solid rgba(255,59,48, 0.12)",
         boxShadow: resolved
           ? "none"
-          : "0 0 20px rgba(239, 68, 68, 0.06), inset 0 1px 0 rgba(255,255,255,0.03)",
+          : "0 0 20px rgba(255,59,48, 0.06), inset 0 1px 0 rgba(255,255,255,0.03)",
       }}
     >
       <div className="px-4 py-3.5">

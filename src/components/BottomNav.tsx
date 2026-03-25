@@ -37,15 +37,14 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 
 export default function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-20" style={{ padding: "0 12px 8px" }}>
+    <div className="absolute bottom-0 left-0 right-0 z-20 glass-bar-bottom" style={{ height: 68, paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
       <div
-        className="glass-panel"
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-around",
-          padding: "6px 8px",
-          borderRadius: 22,
+          height: "100%",
+          padding: "0 8px",
         }}
       >
         {tabs.map((tab) => {
@@ -58,39 +57,23 @@ export default function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 2,
-                padding: "8px 16px",
-                borderRadius: 16,
+                gap: 3,
+                padding: "6px 16px",
                 border: "none",
                 cursor: "pointer",
-                color: isActive ? "#00e5ff" : "rgba(255,255,255,0.25)",
-                background: isActive ? "rgba(0,229,255,0.08)" : "transparent",
-                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
-                position: "relative",
-                filter: isActive ? "drop-shadow(0 0 8px rgba(0,229,255,0.3))" : "none",
+                color: isActive ? "#0A84FF" : "rgba(255,255,255,0.30)",
+                background: "transparent",
+                transition: "color 0.2s ease",
               }}
               onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                if (!isActive) e.currentTarget.style.color = "rgba(255,255,255,0.55)";
               }}
               onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.background = "transparent";
+                if (!isActive) e.currentTarget.style.color = "rgba(255,255,255,0.30)";
               }}
             >
-              {isActive && (
-                <div style={{
-                  position: "absolute",
-                  top: 0,
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: 20,
-                  height: 2,
-                  borderRadius: 1,
-                  background: "#00e5ff",
-                  boxShadow: "0 0 8px rgba(0,229,255,0.5)",
-                }} />
-              )}
               <div dangerouslySetInnerHTML={{ __html: tab.icon }} />
-              <span style={{ fontSize: 10, fontWeight: isActive ? 600 : 500, letterSpacing: "0.02em" }}>{tab.label}</span>
+              <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: "0.01em" }}>{tab.label}</span>
             </button>
           );
         })}

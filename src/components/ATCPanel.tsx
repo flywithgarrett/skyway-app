@@ -229,7 +229,7 @@ function useWaveformRenderer(
         const x = i * (BAR_W + BAR_GAP);
 
         const alpha = 0.15 + val * 0.85;
-        ctx.fillStyle = `rgba(52, 211, 153, ${alpha})`;
+        ctx.fillStyle = `rgba(52,199,89, ${alpha})`;
 
         ctx.beginPath();
         ctx.roundRect(x, cy - barH, BAR_W, barH * 2, BAR_W / 2);
@@ -256,7 +256,7 @@ function highlightMatches(text: string, query: string): React.ReactNode {
   const parts = text.split(regex);
   return parts.map((part, i) =>
     regex.test(part) ? (
-      <mark key={i} style={{ background: "rgba(52,211,153,0.3)", color: "#34d399", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
+      <mark key={i} style={{ background: "rgba(52,199,89,0.3)", color: "#34C759", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
     ) : (
       part
     )
@@ -444,8 +444,8 @@ export default function ATCPanel({
               width: 6,
               height: 6,
               borderRadius: 3,
-              background: connected ? "#34d399" : "rgba(255,255,255,0.2)",
-              boxShadow: connected ? "0 0 8px rgba(52,211,153,0.5)" : "none",
+              background: connected ? "#34C759" : "rgba(255,255,255,0.2)",
+              boxShadow: connected ? "0 0 8px rgba(52,199,89,0.5)" : "none",
               animation: connected ? "atcLivePulse 2s ease-in-out infinite" : "none",
             }}
           />
@@ -511,14 +511,14 @@ export default function ATCPanel({
                   width: 6,
                   height: 6,
                   borderRadius: 3,
-                  background: connected ? "#34d399" : "rgba(255,255,255,0.15)",
-                  boxShadow: connected ? "0 0 8px rgba(52,211,153,0.5)" : "none",
+                  background: connected ? "#34C759" : "rgba(255,255,255,0.15)",
+                  boxShadow: connected ? "0 0 8px rgba(52,199,89,0.5)" : "none",
                   animation: connected ? "atcLivePulse 2s ease-in-out infinite" : "none",
                 }} />
                 <span style={{
                   fontSize: 10,
                   fontWeight: 600,
-                  color: connected ? "#34d399" : "rgba(255,255,255,0.25)",
+                  color: connected ? "#34C759" : "rgba(255,255,255,0.25)",
                   letterSpacing: "0.04em",
                 }}>
                   {connected ? "Live" : "Offline"}
@@ -599,8 +599,8 @@ export default function ATCPanel({
                     fontWeight: 600,
                     fontFamily: "inherit",
                     transition: "all 0.2s",
-                    background: audioOn ? "rgba(52,211,153,0.15)" : "rgba(255,255,255,0.06)",
-                    color: audioOn ? "#34d399" : "rgba(255,255,255,0.5)",
+                    background: audioOn ? "rgba(52,199,89,0.15)" : "rgba(255,255,255,0.06)",
+                    color: audioOn ? "#34C759" : "rgba(255,255,255,0.5)",
                   }}
                 >
                   {audioOn ? (
@@ -625,7 +625,7 @@ export default function ATCPanel({
                       max={100}
                       value={volume}
                       onChange={(e) => setVolume(Number(e.target.value))}
-                      style={{ width: 60, height: 3, accentColor: "#34d399", cursor: "pointer" }}
+                      style={{ width: 60, height: 3, accentColor: "#34C759", cursor: "pointer" }}
                     />
                   </div>
                 )}
@@ -657,8 +657,8 @@ export default function ATCPanel({
                 </div>
                 {isRec && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-                    <div style={{ width: 5, height: 5, borderRadius: 3, background: "#ef4444", boxShadow: "0 0 6px rgba(239,68,68,0.6)", animation: "atcLivePulse 1s ease-in-out infinite" }} />
-                    <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(239,68,68,0.8)", letterSpacing: "0.04em" }}>Transmission Active</span>
+                    <div style={{ width: 5, height: 5, borderRadius: 3, background: "#FF3B30", boxShadow: "0 0 6px rgba(255,59,48,0.6)", animation: "atcLivePulse 1s ease-in-out infinite" }} />
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,59,48,0.8)", letterSpacing: "0.04em" }}>Transmission Active</span>
                   </div>
                 )}
               </div>
@@ -778,7 +778,7 @@ export default function ATCPanel({
                       padding: "10px 16px",
                       borderBottom: "1px solid rgba(255,255,255,0.02)",
                       animation: "atcFadeIn 0.2s ease-out",
-                      background: isEmergency ? "rgba(239,68,68,0.06)" : "transparent",
+                      background: isEmergency ? "rgba(255,59,48,0.06)" : "transparent",
                       transition: "background 0.15s",
                     }}
                     onMouseEnter={(e) => { if (!isEmergency) e.currentTarget.style.background = "rgba(255,255,255,0.02)"; }}
@@ -790,9 +790,9 @@ export default function ATCPanel({
                         <button
                           onClick={() => onCallsignClick(t.callsign!, t.lat, t.lng)}
                           style={{
-                            background: "rgba(52,211,153,0.08)",
+                            background: "rgba(52,199,89,0.08)",
                             border: "none",
-                            color: "#34d399",
+                            color: "#34C759",
                             cursor: "pointer",
                             fontWeight: 600,
                             fontSize: 11,
@@ -802,14 +802,14 @@ export default function ATCPanel({
                             transition: "background 0.15s",
                             letterSpacing: "0.02em",
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.15)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.08)"; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,199,89,0.15)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,199,89,0.08)"; }}
                         >
                           {t.callsign}
                         </button>
                       )}
                       {isEmergency && (
-                        <span style={{ fontSize: 9, fontWeight: 600, color: "#ef4444", letterSpacing: "0.04em" }}>ALERT</span>
+                        <span style={{ fontSize: 9, fontWeight: 600, color: "#FF3B30", letterSpacing: "0.04em" }}>ALERT</span>
                       )}
                       <span style={{
                         fontSize: 10,

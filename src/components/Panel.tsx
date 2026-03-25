@@ -55,11 +55,11 @@ function computeFlightInfo(flight: Flight) {
 
 function StatusPill({ status }: { status: string }) {
   const colors: Record<string, { bg: string; text: string; dot: string }> = {
-    "en-route": { bg: "rgba(52,211,153,0.1)", text: "#34d399", dot: "#34d399" },
-    landed: { bg: "rgba(100,116,139,0.1)", text: "#94a3b8", dot: "#94a3b8" },
-    scheduled: { bg: "rgba(96,165,250,0.1)", text: "#60a5fa", dot: "#60a5fa" },
-    taxiing: { bg: "rgba(251,191,36,0.1)", text: "#fbbf24", dot: "#fbbf24" },
-    unknown: { bg: "rgba(148,163,184,0.1)", text: "#94a3b8", dot: "#94a3b8" },
+    "en-route": { bg: "rgba(52,199,89,0.12)", text: "#34C759", dot: "#34C759" },
+    landed: { bg: "rgba(255,255,255,0.06)", text: "rgba(255,255,255,0.55)", dot: "rgba(255,255,255,0.40)" },
+    scheduled: { bg: "rgba(10,132,255,0.12)", text: "#0A84FF", dot: "#0A84FF" },
+    taxiing: { bg: "rgba(255,149,0,0.12)", text: "#FF9500", dot: "#FF9500" },
+    unknown: { bg: "rgba(255,255,255,0.06)", text: "rgba(255,255,255,0.55)", dot: "rgba(255,255,255,0.40)" },
   };
   const c = colors[status] || colors["unknown"];
   const labels: Record<string, string> = {
@@ -90,12 +90,12 @@ export default function Panel({ flight, detail, detailLoading, onClose, onViewDe
     <div className="absolute bottom-14 left-0 right-0 sm:left-auto sm:right-4 sm:bottom-16 sm:w-[340px] z-30"
       style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif" }}>
       <div className="mx-2 sm:mx-0 overflow-hidden" style={{
-        background: "rgba(12,12,14,0.88)",
-        backdropFilter: "blur(40px) saturate(1.5)",
-        WebkitBackdropFilter: "blur(40px) saturate(1.5)",
-        borderRadius: 20,
+        background: "rgba(17,17,24,0.92)",
+        backdropFilter: "blur(20px) saturate(1.3)",
+        WebkitBackdropFilter: "blur(20px) saturate(1.3)",
+        borderRadius: 16,
         border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 16px 64px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.05) inset",
+        boxShadow: "0 12px 48px rgba(0,0,0,0.5)",
       }}>
         {/* Header: airline + close */}
         <div style={{ padding: "16px 16px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

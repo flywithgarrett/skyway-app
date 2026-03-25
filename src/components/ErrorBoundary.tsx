@@ -42,8 +42,8 @@ export default class ErrorBoundary extends React.Component<Props, State> {
               onClick={() => window.location.reload()}
               style={{
                 marginTop: 24, padding: "10px 24px", borderRadius: 10,
-                background: "rgba(0,229,255,0.1)", border: "1px solid rgba(0,229,255,0.3)",
-                color: "#00e5ff", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                background: "rgba(10,132,255,0.12)", border: "1px solid rgba(10,132,255,0.3)",
+                color: "#0A84FF", cursor: "pointer", fontSize: 13, fontWeight: 600,
               }}
             >
               Reload
