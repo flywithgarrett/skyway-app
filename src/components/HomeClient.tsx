@@ -266,18 +266,19 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         <button
           onClick={() => setFlyToISS(true)}
           style={{
-            position: "absolute", top: 52, right: 12, zIndex: 50,
-            padding: "6px 10px", cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
-            border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10,
+            position: "absolute", top: 56, right: 12, zIndex: 50,
+            padding: "6px 12px", cursor: "pointer",
+            background: "rgba(255,255,255,0.07)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: "1px solid rgba(255,255,255,0.10)", borderRadius: 10,
             display: "flex", alignItems: "center", gap: 8,
+            transition: "background 0.15s ease",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.7)"; e.currentTarget.style.borderColor = "rgba(52,199,89,0.25)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.55)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
         >
-          <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34C759", boxShadow: "0 0 6px rgba(52,199,89,0.6)", animation: "pulse 2s ease-in-out infinite" }} />
+          <div style={{ width: 6, height: 6, borderRadius: 3, background: "#fff" }} />
           <span style={{ fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: "0.1em" }}>ISS</span>
           <span style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.5)", fontFamily: "'SF Mono', Menlo, monospace" }}>
             {issPosition.lat.toFixed(1)}° {issPosition.lng.toFixed(1)}°
@@ -339,8 +340,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
             onClick={() => setAuthOpen(true)}
             style={{
               background: "#0A84FF", border: "none",
-              borderRadius: 10, padding: "7px 14px", cursor: "pointer",
-              fontSize: 12, fontWeight: 600, color: "#fff",
+              borderRadius: 10, padding: "7px 16px", cursor: "pointer",
+              fontSize: 14, fontWeight: 600, color: "#fff",
             }}
           >
             Sign In

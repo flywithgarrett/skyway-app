@@ -36,11 +36,11 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 function getIconSize(effectiveZoom: number, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
   if (isGround) return effectiveZoom >= 14 ? 44 : 36;
-  if (effectiveZoom >= 12) return 44;
-  if (effectiveZoom >= 9) return 38;
-  if (effectiveZoom >= 7) return 32;
-  if (effectiveZoom >= 5) return 28;
-  return 24;
+  if (effectiveZoom >= 12) return 52;
+  if (effectiveZoom >= 9) return 46;
+  if (effectiveZoom >= 7) return 40;
+  if (effectiveZoom >= 5) return 34;
+  return 30;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -62,7 +62,7 @@ function getVisibleFlights(
   // Globe view (zoom < 5): take every 10th airborne flight for global spread
   if (effectiveZoom < 5) {
     const airborne = allFlights.filter(f => !isGroundTraffic(f));
-    return airborne.filter((_, i) => i % 10 === 0);
+    return airborne.filter((_, i) => i % 3 === 0);
   }
 
   // Hide ground traffic at zoom < 12
