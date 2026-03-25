@@ -923,6 +923,22 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
       }
     } catch { /* 3D map may not have getBounds */ }
 
+    // 3D maps don't have getBounds — synthesize bounds from camera center + range
+    if (!bounds && range3d !== null && map.center) {
+      const cLat = typeof map.center.lat === "function" ? map.center.lat() : map.center.lat;
+      const cLng = typeof map.center.lng === "function" ? map.center.lng() : map.center.lng;
+      if (typeof cLat === "number" && typeof cLng === "number") {
+        // Convert range (meters) to approximate degrees (1° lat ≈ 111km)
+        const degSpan = (range3d / 111000) * 1.2; // 1.2x for tilt/perspective margin
+        bounds = {
+          north: Math.min(90, cLat + degSpan),
+          south: Math.max(-90, cLat - degSpan),
+          east: cLng + degSpan / Math.max(0.1, Math.cos(cLat * Math.PI / 180)),
+          west: cLng - degSpan / Math.max(0.1, Math.cos(cLat * Math.PI / 180)),
+        };
+      }
+    }
+
     // Simple visibility culling: viewport filter + even subsample, NO grid
     let renderList = getVisibleFlights(allValid, effectiveZoom, bounds);
 
