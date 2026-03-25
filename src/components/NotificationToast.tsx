@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FlightAlert, AlertSeverity } from "@/lib/alerts";
+import { FlightAlert } from "@/lib/alerts";
 
 interface NotificationToastProps {
   alerts: FlightAlert[];
@@ -9,21 +9,20 @@ interface NotificationToastProps {
   onTap: (alert: FlightAlert) => void;
 }
 
-const SEVERITY_COLORS: Record<AlertSeverity, string> = {
-  good: "#34C759",
-  warning: "#FF9500",
-  bad: "#FF3B30",
-  info: "#0A84FF",
-};
-
 const AUTO_DISMISS_MS = 6000;
 const MAX_VISIBLE = 3;
 
-function ToastItem({ alert, onDismiss, onTap, index }: {
-  alert: FlightAlert; onDismiss: () => void; onTap: () => void; index: number;
+function timeAgo(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
+
+function ToastItem({ alert, onDismiss, onTap }: {
+  alert: FlightAlert; onDismiss: () => void; onTap: () => void;
 }) {
   const [exiting, setExiting] = useState(false);
-  const stripe = SEVERITY_COLORS[alert.severity];
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -37,68 +36,60 @@ function ToastItem({ alert, onDismiss, onTap, index }: {
     <div
       onClick={onTap}
       style={{
-        position: "relative",
-        background: "rgba(28,28,40,0.95)",
-        backdropFilter: "blur(20px) saturate(1.3)",
-        WebkitBackdropFilter: "blur(20px) saturate(1.3)",
-        border: "1px solid rgba(255,255,255,0.14)",
+        background: "rgba(28,28,40,0.96)",
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderLeft: `3px solid ${alert.color}`,
         borderRadius: 14,
-        padding: "12px 14px 12px 18px",
+        padding: "12px 14px",
         display: "flex",
-        alignItems: "center",
-        gap: 12,
+        gap: 10,
         cursor: "pointer",
-        overflow: "hidden",
-        transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-        transform: exiting ? "translateY(-20px)" : "translateY(0)",
-        opacity: exiting ? 0 : 1,
+        width: 320,
         marginBottom: 8,
         boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-        // Stacking offset
-        ...(index > 0 ? { marginTop: -4 } : {}),
+        transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        transform: exiting ? "translateX(340px)" : "translateX(0)",
+        opacity: exiting ? 0 : 1,
+        position: "relative",
       }}
     >
-      {/* Colored left stripe */}
-      <div style={{
-        position: "absolute", left: 0, top: 0, bottom: 0,
-        width: 3, background: stripe, borderRadius: "14px 0 0 14px",
-      }} />
-
-      {/* Airline badge */}
-      <div style={{
-        width: 32, height: 32, borderRadius: "50%",
-        background: `linear-gradient(135deg, ${alert.airlineColor}, ${alert.airlineColor}88)`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: "0.05em",
-        flexShrink: 0,
-      }}>
-        {alert.airlineCode}
-      </div>
+      {/* Icon */}
+      <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>
+        {alert.icon}
+      </span>
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 700, color: "#fff",
-          letterSpacing: "-0.01em",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-        }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", letterSpacing: "-0.01em" }}>
           {alert.title}
         </div>
         <div style={{
-          fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 2,
+          fontSize: 13, color: "rgba(255,255,255,0.60)", marginTop: 2,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
-          {alert.subtitle}
+          {alert.body}
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+          {timeAgo(alert.timestamp)}
         </div>
       </div>
 
-      {/* Time badge */}
-      <div style={{
-        fontSize: 10, color: "rgba(255,255,255,0.30)",
-        fontVariantNumeric: "tabular-nums", flexShrink: 0,
-      }}>
-        now
-      </div>
+      {/* Dismiss X */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setExiting(true); setTimeout(onDismiss, 300); }}
+        style={{
+          position: "absolute", top: 8, right: 8,
+          background: "none", border: "none", cursor: "pointer",
+          color: "rgba(255,255,255,0.30)", padding: 4,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -110,29 +101,23 @@ export default function NotificationToast({ alerts, onDismiss, onTap }: Notifica
   return (
     <div style={{
       position: "fixed",
-      top: 60, // Below top bar
-      left: "50%",
-      transform: "translateX(-50%)",
-      width: "min(420px, calc(100% - 32px))",
-      zIndex: 50,
+      top: 70,
+      right: 16,
+      zIndex: 9999,
       pointerEvents: "auto",
     }}>
       <style>{`
         @keyframes toastSlideIn {
-          from { transform: translateY(-30px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
+          from { transform: translateX(340px); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
         }
       `}</style>
-      {visible.map((alert, i) => (
-        <div key={alert.id} style={{ animation: "toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+      {visible.map((alert) => (
+        <div key={alert.id} style={{ animation: "toastSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)" }}>
           <ToastItem
             alert={alert}
-            index={i}
             onDismiss={() => onDismiss(alert.id)}
-            onTap={() => {
-              onDismiss(alert.id);
-              onTap(alert);
-            }}
+            onTap={() => { onDismiss(alert.id); onTap(alert); }}
           />
         </div>
       ))}

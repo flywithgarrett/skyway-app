@@ -3,20 +3,24 @@
 import { useMemo } from "react";
 import { Flight } from "@/lib/types";
 import { EmergencyFlight, getEmergencyFlights } from "@/lib/emergencyData";
-import { FlightAlert, ATCAdvisory, AlertSeverity } from "@/lib/alerts";
+import { FlightAlert, ATCAdvisory, ALERT_CONFIG } from "@/lib/alerts";
 
 interface AlertsViewProps {
   onSelectFlight: (flight: Flight) => void;
   onSwitchToMap: () => void;
   flightAlerts?: FlightAlert[];
   atcAdvisories?: ATCAdvisory[];
+  atcLastUpdated?: number | null;
   onMarkRead?: (id: string) => void;
+  onMarkAllRead?: () => void;
+  unreadCount?: number;
+  onAddFlight?: () => void;
 }
 
-function timeAgo(ts: number | string): string {
-  const ms = typeof ts === "number" ? ts : new Date(ts).getTime();
-  const diff = Date.now() - ms;
-  const mins = Math.floor(diff / 60000);
+// ═══ Helpers ═══
+
+function timeAgo(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
   if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -24,121 +28,137 @@ function timeAgo(ts: number | string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function timeAgoShort(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
+
 function dayLabel(ts: number): string {
   const d = new Date(ts);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return "Today";
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (d.toDateString() === today.toDateString()) return "TODAY";
+  if (d.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" }).toUpperCase();
 }
 
-const SEVERITY_COLORS: Record<AlertSeverity, string> = {
-  good: "#34C759",
-  warning: "#FF9500",
-  bad: "#FF3B30",
-  info: "#0A84FF",
-};
+// ═══ Alert Card ═══
 
-// ═══ Alert History Item ═══
-function AlertHistoryItem({ alert, onTap }: { alert: FlightAlert; onTap: () => void }) {
-  const stripe = SEVERITY_COLORS[alert.severity];
+function AlertCard({ alert, onTap }: { alert: FlightAlert; onTap: () => void }) {
   return (
     <button
       onClick={onTap}
       style={{
         width: "100%", textAlign: "left", display: "flex", gap: 12,
-        padding: "12px 14px 12px 16px", borderRadius: 14,
-        background: alert.read ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.04)",
+        padding: "12px 14px",
+        background: alert.read ? "rgba(28,28,40,0.4)" : "rgba(28,28,40,0.6)",
         border: "1px solid rgba(255,255,255,0.06)",
-        cursor: "pointer", position: "relative", overflow: "hidden",
-        transition: "background 0.2s ease",
+        borderLeft: `3px solid ${alert.color}`,
+        borderRadius: 12,
+        cursor: "pointer", position: "relative",
+        transition: "background 0.15s ease",
       }}
     >
-      {/* Left stripe */}
+      {/* Icon circle */}
       <div style={{
-        position: "absolute", left: 0, top: 0, bottom: 0,
-        width: 3, background: stripe,
-      }} />
-
-      {/* Airline badge */}
-      <div style={{
-        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-        background: `linear-gradient(135deg, ${alert.airlineColor}, ${alert.airlineColor}88)`,
+        width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+        background: `${alert.color}18`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 9, fontWeight: 700, color: "#fff",
+        fontSize: 16,
       }}>
-        {alert.airlineCode}
+        {alert.icon}
       </div>
 
+      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>
-          {alert.title}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>
+            {alert.title}
+          </span>
+          {/* Flight pill */}
+          <span style={{
+            fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.40)",
+            background: "rgba(255,255,255,0.06)", padding: "2px 6px", borderRadius: 4,
+          }}>
+            {alert.flightNumber}
+          </span>
         </div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
-          {alert.subtitle}
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", marginTop: 3 }}>
+          {alert.body}
         </div>
       </div>
 
-      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.30)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-        {timeAgo(alert.timestamp)}
+      {/* Time + unread dot */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", fontVariantNumeric: "tabular-nums" }}>
+          {timeAgoShort(alert.timestamp)}
+        </span>
+        {!alert.read && (
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#0A84FF" }} />
+        )}
       </div>
     </button>
   );
 }
 
 // ═══ ATC Advisory Card ═══
+
 function ATCCard({ advisory }: { advisory: ATCAdvisory }) {
-  const bgColor = advisory.severity === "red"
-    ? "rgba(255,59,48,0.08)"
-    : advisory.severity === "amber"
-    ? "rgba(255,149,0,0.08)"
-    : "rgba(255,255,255,0.03)";
-  const borderColor = advisory.severity === "red"
-    ? "rgba(255,59,48,0.20)"
-    : advisory.severity === "amber"
-    ? "rgba(255,149,0,0.20)"
-    : "rgba(255,255,255,0.08)";
-  const titleColor = advisory.severity === "red" ? "#FF3B30"
-    : advisory.severity === "amber" ? "#FF9500" : "#fff";
+  const isGroundStop = advisory.type === "ground_stop";
+  const bg = isGroundStop ? "rgba(255,59,48,0.08)" : "rgba(255,149,0,0.08)";
+  const border = isGroundStop ? "rgba(255,59,48,0.20)" : "rgba(255,149,0,0.20)";
+  const titleColor = isGroundStop ? "#FF3B30" : "#FF9500";
 
   return (
     <div style={{
-      background: bgColor,
-      border: `1px solid ${borderColor}`,
+      background: bg,
+      border: `1px solid ${border}`,
       borderRadius: 14,
       padding: 16,
       marginBottom: 8,
     }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: titleColor }}>
-          {advisory.title}
-        </span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 16 }}>🗼</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: titleColor }}>
+            {advisory.airport} {advisory.type === "ground_stop" ? "Ground Stop" : "Delays"}
+          </span>
+        </div>
         {advisory.avgDelay && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: titleColor, flexShrink: 0 }}>
-            {advisory.avgDelay} delay
+          <span style={{ fontSize: 12, fontWeight: 600, color: titleColor }}>
+            ↗ {advisory.avgDelay} delay
           </span>
         )}
       </div>
 
-      {/* Reason + detail */}
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>
-        {advisory.reason}
-      </div>
-      {advisory.detail && (
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
-          {advisory.detail}
+      {/* Body */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: titleColor }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>
+            {isGroundStop
+              ? `Flights to ${advisory.airport} Grounded`
+              : `Ground Delay Program Active`}
+          </span>
         </div>
-      )}
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginLeft: 12 }}>
+          {advisory.reason}
+          {advisory.detail ? ` · ${advisory.detail}` : ""}
+        </div>
+      </div>
 
       {/* Footer */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 10 }}>
         <span style={{ fontSize: 13 }}>
-          {advisory.type === "ground_stop" ? "🛑" : advisory.type === "weather" ? "⛈" : "⚠"}
+          {isGroundStop ? "🛑" : "⚠"}
         </span>
-        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.30)" }}>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
           Advisory from Air Traffic Control
         </span>
       </div>
@@ -146,80 +166,101 @@ function ATCCard({ advisory }: { advisory: ATCAdvisory }) {
   );
 }
 
-// ═══ Emergency Card (kept from original) ═══
-function SquawkBadge({ type }: { type: EmergencyFlight["emergencyType"] }) {
-  const labels: Record<string, { label: string; color: string; bg: string }> = {
-    squawk7700: { label: "SQUAWK 7700", color: "#FF3B30", bg: "rgba(255,59,48,0.12)" },
-    squawk7600: { label: "SQUAWK 7600", color: "#FF9500", bg: "rgba(255,149,0,0.12)" },
-    squawk7500: { label: "SQUAWK 7500", color: "#FF3B30", bg: "rgba(255,59,48,0.15)" },
-  };
-  const s = labels[type] || labels.squawk7700;
-  return (
-    <span style={{
-      padding: "2px 10px", borderRadius: 20,
-      fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
-      color: s.color, background: s.bg,
-    }}>
-      {s.label}
-    </span>
-  );
-}
+// ═══ Emergency Card ═══
 
 function EmergencyCard({ emergency, onSelect }: { emergency: EmergencyFlight; onSelect: () => void }) {
   const { flight, emergencyType, detectedAt, description, resolved } = emergency;
+  const squawkLabels: Record<string, { label: string; color: string }> = {
+    squawk7700: { label: "7700 EMERGENCY", color: "#FF3B30" },
+    squawk7600: { label: "7600 RADIO FAIL", color: "#FF9500" },
+    squawk7500: { label: "7500 HIJACK", color: "#FF3B30" },
+  };
+  const sq = squawkLabels[emergencyType] || squawkLabels.squawk7700;
+
   return (
     <button
       onClick={onSelect}
       style={{
-        width: "100%", textAlign: "left", borderRadius: 14, overflow: "hidden",
-        background: resolved ? "rgba(17,17,24,0.5)" : "rgba(255,59,48,0.04)",
-        border: resolved ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(255,59,48,0.12)",
-        padding: "14px 16px", cursor: "pointer", transition: "background 0.2s ease",
+        width: "100%", textAlign: "left", borderRadius: 12, padding: "12px 14px",
+        background: resolved ? "rgba(28,28,40,0.3)" : "rgba(255,59,48,0.06)",
+        border: resolved ? "1px solid rgba(255,255,255,0.04)" : "1px solid rgba(255,59,48,0.15)",
+        borderLeft: `3px solid ${resolved ? "rgba(255,255,255,0.10)" : sq.color}`,
+        cursor: "pointer", display: "flex", gap: 12,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 10,
-            background: `linear-gradient(135deg, ${flight.airline.color}, ${flight.airline.color}88)`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9, fontWeight: 700, color: "#fff",
-          }}>
-            {flight.airline.code}
-          </div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{flight.flightNumber}</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.30)" }}>{flight.airline.name}</div>
-          </div>
-        </div>
-        <SquawkBadge type={emergencyType} />
+      <div style={{
+        width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+        background: `linear-gradient(135deg, ${flight.airline.color}, ${flight.airline.color}88)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 9, fontWeight: 700, color: "#fff",
+      }}>
+        {flight.airline.code}
       </div>
-
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.40)", marginBottom: 8 }}>{description}</div>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.20)", fontVariantNumeric: "tabular-nums" }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{flight.flightNumber}</span>
+          <span style={{
+            fontSize: 9, fontWeight: 700, color: sq.color, letterSpacing: "0.04em",
+            background: `${sq.color}18`, padding: "2px 8px", borderRadius: 4,
+          }}>{sq.label}</span>
+        </div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.40)" }}>{description}</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.20)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
           {timeAgo(new Date(detectedAt).getTime())}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: 3,
-            background: resolved ? "#34C759" : "#FF3B30",
-          }} />
-          <span style={{ fontSize: 10, fontWeight: 600, color: resolved ? "rgba(52,199,89,0.6)" : "#FF3B30" }}>
-            {resolved ? "Resolved" : "Active"}
-          </span>
+          {resolved && <span style={{ color: "#34C759", marginLeft: 8 }}>Resolved</span>}
         </div>
       </div>
     </button>
   );
 }
 
+// ═══ Empty State ═══
+
+function EmptyState({ onAddFlight }: { onAddFlight?: () => void }) {
+  return (
+    <div style={{
+      textAlign: "center", padding: "48px 24px",
+      background: "rgba(28,28,40,0.4)",
+      border: "1px solid rgba(255,255,255,0.06)",
+      borderRadius: 16,
+    }}>
+      {/* Bell icon */}
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 16px" }}>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+      <div style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.55)", marginBottom: 6 }}>
+        No alerts yet
+      </div>
+      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.30)", marginBottom: 20 }}>
+        Save flights to start tracking them
+      </div>
+      {onAddFlight && (
+        <button
+          onClick={onAddFlight}
+          style={{
+            background: "#0A84FF", border: "none", borderRadius: 12,
+            padding: "10px 20px", color: "#fff", fontSize: 14, fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Add a Flight
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ═══ Main AlertsView ═══
-export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts = [], atcAdvisories = [], onMarkRead }: AlertsViewProps) {
+
+export default function AlertsView({
+  onSelectFlight, onSwitchToMap,
+  flightAlerts = [], atcAdvisories = [], atcLastUpdated,
+  onMarkRead, onMarkAllRead, unreadCount = 0, onAddFlight,
+}: AlertsViewProps) {
   const { active, past24h } = useMemo(() => getEmergencyFlights(), []);
 
-  // Group flight alerts by day
+  // Group alerts by day
   const groupedAlerts = useMemo(() => {
     const groups: { label: string; alerts: FlightAlert[] }[] = [];
     const sorted = [...flightAlerts].sort((a, b) => b.timestamp - a.timestamp);
@@ -235,29 +276,48 @@ export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts
     return groups;
   }, [flightAlerts]);
 
-  return (
-    <div className="view-fade-in absolute inset-0 z-10 flex flex-col" style={{ top: 48, bottom: 52 }}>
-      <div className="flex-1 overflow-y-auto px-4 py-4" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+  const hasContent = flightAlerts.length > 0 || atcAdvisories.length > 0 || active.length > 0;
 
-        {/* Header */}
-        <div style={{ textAlign: "center", paddingTop: 8 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>Alerts</h2>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.30)", marginTop: 4 }}>
-            Flight changes, emergencies & ATC advisories
-          </p>
+  return (
+    <div className="view-fade-in absolute inset-0 z-10 flex flex-col" style={{ top: 48, bottom: 68 }}>
+      <div className="flex-1 overflow-y-auto px-4 py-4" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {/* ── Header ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 8 }}>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>
+            Alerts
+          </h2>
+          {unreadCount > 0 && onMarkAllRead && (
+            <button
+              onClick={onMarkAllRead}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 13, color: "#0A84FF", fontWeight: 500,
+              }}
+            >
+              Mark all read
+            </button>
+          )}
         </div>
+
+        {/* ── Empty state ── */}
+        {!hasContent && <EmptyState onAddFlight={onAddFlight} />}
 
         {/* ── ATC Advisories ── */}
         {atcAdvisories.length > 0 && (
           <section>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 13 }}>🗼</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.30)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                Direct from the Tower
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.30)",
+                letterSpacing: "0.04em", textTransform: "uppercase",
+              }}>
+                Air Traffic Control
               </span>
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>
-                {atcAdvisories.length}
-              </span>
+              {atcLastUpdated && (
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)", fontVariantNumeric: "tabular-nums" }}>
+                  Updated {timeAgo(atcLastUpdated)}
+                </span>
+              )}
             </div>
             {atcAdvisories.map((a, i) => (
               <ATCCard key={`${a.airport}-${a.type}-${i}`} advisory={a} />
@@ -270,14 +330,14 @@ export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts
           <section>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <div className="emergency-pulse" style={{ width: 6, height: 6, borderRadius: 3, background: "#FF3B30" }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,59,48,0.70)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                Active Emergencies
-              </span>
-              <span style={{ fontSize: 10, color: "rgba(255,59,48,0.40)", marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>
-                {active.length}
+              <span style={{
+                fontSize: 11, fontWeight: 600, color: "rgba(255,59,48,0.70)",
+                letterSpacing: "0.04em", textTransform: "uppercase",
+              }}>
+                Active Emergencies · {active.length}
               </span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {active.map((e) => (
                 <EmergencyCard
                   key={e.flight.id}
@@ -292,22 +352,20 @@ export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts
         {/* ── Flight Alert History ── */}
         {groupedAlerts.length > 0 && (
           <section>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.30)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                Flight Alerts
-              </span>
-            </div>
             {groupedAlerts.map((group) => (
               <div key={group.label} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.20)", marginBottom: 8, letterSpacing: "0.02em" }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.25)",
+                  letterSpacing: "0.06em", marginBottom: 8,
+                }}>
                   {group.label}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {group.alerts.map((a) => (
-                    <AlertHistoryItem
+                    <AlertCard
                       key={a.id}
                       alert={a}
-                      onTap={() => { onMarkRead?.(a.id); }}
+                      onTap={() => onMarkRead?.(a.id)}
                     />
                   ))}
                 </div>
@@ -319,12 +377,13 @@ export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts
         {/* ── Past 24h Emergencies ── */}
         {past24h.length > 0 && (
           <section>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.20)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                Past 24 Hours
-              </span>
+            <div style={{
+              fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.20)",
+              letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10,
+            }}>
+              Past 24 Hours
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {past24h.map((e) => (
                 <EmergencyCard
                   key={e.flight.id}
@@ -336,22 +395,19 @@ export default function AlertsView({ onSelectFlight, onSwitchToMap, flightAlerts
           </section>
         )}
 
-        {/* Empty state */}
-        {active.length === 0 && groupedAlerts.length === 0 && atcAdvisories.length === 0 && (
+        {/* ── No active ATC advisories ── */}
+        {atcAdvisories.length === 0 && hasContent && (
           <div style={{
-            textAlign: "center", padding: "40px 20px",
-            background: "rgba(255,255,255,0.02)", borderRadius: 16,
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "rgba(28,28,40,0.3)", border: "1px solid rgba(255,255,255,0.04)",
+            borderRadius: 12, padding: "14px 16px", textAlign: "center",
           }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>✈️</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>All Clear</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.30)", marginTop: 4 }}>
-              No active alerts or advisories
-            </div>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.25)" }}>
+              No active ATC advisories
+            </span>
           </div>
         )}
 
-        <div style={{ height: 16 }} />
+        <div style={{ height: 20 }} />
       </div>
     </div>
   );

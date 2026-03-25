@@ -3,9 +3,20 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Flight } from "./types";
 
-// ═══ Alert Types ═══
+// ═══ Alert Types & Colors ═══
 
-export type AlertSeverity = "good" | "warning" | "bad" | "info";
+export type AlertType = "gate_change" | "delay" | "boarding" | "departure" | "landing" | "cancelled" | "baggage" | "atc";
+
+export const ALERT_CONFIG: Record<AlertType, { icon: string; color: string }> = {
+  gate_change: { icon: "🚪", color: "#FF9500" },
+  delay:       { icon: "⏱",  color: "#FF9500" },
+  boarding:    { icon: "✈",  color: "#34C759" },
+  departure:   { icon: "🛫", color: "#34C759" },
+  landing:     { icon: "🛬", color: "#34C759" },
+  cancelled:   { icon: "✕",  color: "#FF3B30" },
+  baggage:     { icon: "🧳", color: "#0A84FF" },
+  atc:         { icon: "🗼", color: "#FF3B30" },
+};
 
 export interface FlightAlert {
   id: string;
@@ -15,10 +26,11 @@ export interface FlightAlert {
   airlineColor: string;
   origin: string;
   destination: string;
-  type: string;
+  type: AlertType;
   title: string;
-  subtitle: string;
-  severity: AlertSeverity;
+  body: string;
+  color: string;
+  icon: string;
   timestamp: number;
   read: boolean;
 }
@@ -34,6 +46,24 @@ export interface ATCAdvisory {
   endTime: string | null;
 }
 
+// ═══ LocalStorage persistence ═══
+
+const LS_KEY = "skyway_alerts";
+
+function loadAlerts(): FlightAlert[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch { return []; }
+}
+
+function saveAlerts(alerts: FlightAlert[]) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(alerts.slice(0, 200)));
+  } catch {}
+}
+
 // ═══ Flight Change Detection ═══
 
 interface FlightSnapshot {
@@ -45,79 +75,69 @@ interface FlightSnapshot {
   estimatedArr: string | null;
 }
 
-function hasRoute(f: Flight): boolean {
-  return f.origin.code !== "---" && f.destination.code !== "---";
-}
-
 function routeLabel(f: Flight): string {
-  return hasRoute(f) ? `${f.origin.code} → ${f.destination.code}` : f.flightNumber;
+  if (f.origin.code !== "---" && f.destination.code !== "---") {
+    return `${f.origin.code} → ${f.destination.code}`;
+  }
+  return f.flightNumber;
 }
 
 function detectChanges(
   prev: FlightSnapshot,
   curr: Flight,
-): { type: string; title: string; subtitle: string; severity: AlertSeverity }[] {
-  const changes: { type: string; title: string; subtitle: string; severity: AlertSeverity }[] = [];
+): { type: AlertType; title: string; body: string }[] {
+  const changes: { type: AlertType; title: string; body: string }[] = [];
   const route = routeLabel(curr);
 
-  // Departure delay detection
+  // Departure delay
   if (curr.scheduledDep && curr.actualDep) {
-    const schedMs = new Date(curr.scheduledDep).getTime();
-    const actualMs = new Date(curr.actualDep).getTime();
-    const delayMin = Math.round((actualMs - schedMs) / 60000);
+    const delayMin = Math.round(
+      (new Date(curr.actualDep).getTime() - new Date(curr.scheduledDep).getTime()) / 60000
+    );
     if (delayMin >= 15 && prev.status === "scheduled") {
       const newTime = new Date(curr.actualDep).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       changes.push({
         type: "delay",
-        title: `${curr.flightNumber} · Delayed ${delayMin}m`,
-        subtitle: `New departure ${newTime}`,
-        severity: delayMin >= 60 ? "bad" : "warning",
+        title: `Delayed ${delayMin}m`,
+        body: `${curr.flightNumber} · New departure ${newTime}`,
       });
     }
   }
 
   // Status transitions
   if (prev.status !== curr.status) {
-    // Departed (was scheduled/taxiing, now en-route)
     if (curr.status === "en-route" && (prev.status === "scheduled" || prev.status === "taxiing")) {
       changes.push({
         type: "departure",
-        title: `${curr.flightNumber} · Departed`,
-        subtitle: route,
-        severity: "good",
+        title: "Departed",
+        body: `${curr.flightNumber} · ${route}`,
       });
     }
 
-    // Taxiing (was scheduled, now taxiing)
     if (curr.status === "taxiing" && prev.status === "scheduled") {
       changes.push({
         type: "boarding",
-        title: `${curr.flightNumber} · Boarding`,
-        subtitle: route,
-        severity: "info",
+        title: "Boarding now",
+        body: `${curr.flightNumber} · ${route}`,
       });
     }
 
-    // Landed
     if (curr.status === "landed" && prev.status === "en-route") {
       changes.push({
         type: "landing",
-        title: `${curr.flightNumber} · Landed`,
-        subtitle: route,
-        severity: "good",
+        title: "Landed",
+        body: `${curr.flightNumber} · ${route}`,
       });
     }
   }
 
-  // Descending detection (approaching landing)
+  // Altitude-based landing detection (backup)
   if (!prev.onGround && curr.onGround && prev.altitude > 1000) {
-    // Don't duplicate if we already have a landing change from status transition
     if (!changes.some(c => c.type === "landing")) {
       changes.push({
         type: "landing",
-        title: `${curr.flightNumber} · Landed`,
-        subtitle: `${curr.flightNumber} has arrived`,
-        severity: "good",
+        title: "Landed",
+        body: `${curr.flightNumber} has arrived`,
       });
     }
   }
@@ -126,31 +146,24 @@ function detectChanges(
 }
 
 // ═══ Flight Alert Monitor Hook ═══
-// Only monitors SAVED flights — not all 5000+ in the feed
 
 export function useFlightAlerts(flights: Flight[], savedCallsigns: Set<string>) {
-  const [alerts, setAlerts] = useState<FlightAlert[]>([]);
-  const [newAlerts, setNewAlerts] = useState<FlightAlert[]>([]); // For toast display
+  const [alerts, setAlerts] = useState<FlightAlert[]>(() => loadAlerts());
+  const [newAlerts, setNewAlerts] = useState<FlightAlert[]>([]);
   const snapshotsRef = useRef<Map<string, FlightSnapshot>>(new Map());
   const initializedRef = useRef(false);
 
   useEffect(() => {
     if (flights.length === 0 || savedCallsigns.size === 0) return;
 
-    // Only monitor saved flights
     const watched = flights.filter(f => savedCallsigns.has(f.callsign));
     if (watched.length === 0) return;
 
-    // Skip first render — just take snapshots
     if (!initializedRef.current) {
       for (const f of watched) {
         snapshotsRef.current.set(f.id, {
-          status: f.status,
-          altitude: f.altitude,
-          speed: f.speed,
-          onGround: f.onGround,
-          scheduledDep: f.scheduledDep,
-          estimatedArr: f.estimatedArr,
+          status: f.status, altitude: f.altitude, speed: f.speed,
+          onGround: f.onGround, scheduledDep: f.scheduledDep, estimatedArr: f.estimatedArr,
         });
       }
       initializedRef.current = true;
@@ -162,20 +175,16 @@ export function useFlightAlerts(flights: Flight[], savedCallsigns: Set<string>) 
     for (const f of watched) {
       const prev = snapshotsRef.current.get(f.id);
       if (!prev) {
-        // New flight appeared — snapshot it
         snapshotsRef.current.set(f.id, {
-          status: f.status,
-          altitude: f.altitude,
-          speed: f.speed,
-          onGround: f.onGround,
-          scheduledDep: f.scheduledDep,
-          estimatedArr: f.estimatedArr,
+          status: f.status, altitude: f.altitude, speed: f.speed,
+          onGround: f.onGround, scheduledDep: f.scheduledDep, estimatedArr: f.estimatedArr,
         });
         continue;
       }
 
       const changes = detectChanges(prev, f);
       for (const change of changes) {
+        const cfg = ALERT_CONFIG[change.type];
         batch.push({
           id: `${f.id}-${change.type}-${Date.now()}`,
           flightId: f.id,
@@ -186,46 +195,60 @@ export function useFlightAlerts(flights: Flight[], savedCallsigns: Set<string>) 
           destination: f.destination.code,
           type: change.type,
           title: change.title,
-          subtitle: change.subtitle,
-          severity: change.severity,
+          body: change.body,
+          color: cfg.color,
+          icon: cfg.icon,
           timestamp: Date.now(),
           read: false,
         });
       }
 
-      // Update snapshot
       snapshotsRef.current.set(f.id, {
-        status: f.status,
-        altitude: f.altitude,
-        speed: f.speed,
-        onGround: f.onGround,
-        scheduledDep: f.scheduledDep,
-        estimatedArr: f.estimatedArr,
+        status: f.status, altitude: f.altitude, speed: f.speed,
+        onGround: f.onGround, scheduledDep: f.scheduledDep, estimatedArr: f.estimatedArr,
       });
     }
 
     if (batch.length > 0) {
-      setAlerts((prev) => [...batch, ...prev].slice(0, 200)); // Keep max 200
+      setAlerts(prev => {
+        const updated = [...batch, ...prev].slice(0, 200);
+        saveAlerts(updated);
+        return updated;
+      });
       setNewAlerts(batch);
     }
-
   }, [flights, savedCallsigns]);
 
   const dismissToast = useCallback((id: string) => {
-    setNewAlerts((prev) => prev.filter((a) => a.id !== id));
+    setNewAlerts(prev => prev.filter(a => a.id !== id));
   }, []);
 
   const markRead = useCallback((id: string) => {
-    setAlerts((prev) => prev.map((a) => a.id === id ? { ...a, read: true } : a));
+    setAlerts(prev => {
+      const updated = prev.map(a => a.id === id ? { ...a, read: true } : a);
+      saveAlerts(updated);
+      return updated;
+    });
   }, []);
 
-  return { alerts, newAlerts, dismissToast, markRead };
+  const markAllRead = useCallback(() => {
+    setAlerts(prev => {
+      const updated = prev.map(a => ({ ...a, read: true }));
+      saveAlerts(updated);
+      return updated;
+    });
+  }, []);
+
+  const unreadCount = alerts.filter(a => !a.read).length;
+
+  return { alerts, newAlerts, dismissToast, markRead, markAllRead, unreadCount };
 }
 
 // ═══ ATC Advisory Hook ═══
 
 export function useATCAdvisories(pollingMs = 300000) {
   const [advisories, setAdvisories] = useState<ATCAdvisory[]>([]);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchAdvisories = async () => {
@@ -234,6 +257,7 @@ export function useATCAdvisories(pollingMs = 300000) {
         if (res.ok) {
           const json = await res.json();
           setAdvisories(json.advisories || []);
+          setLastUpdated(Date.now());
         }
       } catch {}
     };
@@ -243,5 +267,5 @@ export function useATCAdvisories(pollingMs = 300000) {
     return () => clearInterval(interval);
   }, [pollingMs]);
 
-  return advisories;
+  return { advisories, lastUpdated };
 }

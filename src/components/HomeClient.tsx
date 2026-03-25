@@ -93,8 +93,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
 
   // Flight alerts: only monitor SAVED flights (not all 5000+)
   const savedCallsignSet = useMemo(() => new Set(savedFlights.map(f => f.callsign)), [savedFlights]);
-  const { alerts: flightAlerts, newAlerts, dismissToast, markRead } = useFlightAlerts(flights, savedCallsignSet);
-  const atcAdvisories = useATCAdvisories(300000); // 5 minutes
+  const { alerts: flightAlerts, newAlerts, dismissToast, markRead, markAllRead, unreadCount } = useFlightAlerts(flights, savedCallsignSet);
+  const { advisories: atcAdvisories, lastUpdated: atcLastUpdated } = useATCAdvisories(300000);
 
   // Show alert banner when new alert arrives
   useEffect(() => {
@@ -249,7 +249,11 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           onSwitchToMap={() => setActiveTab("map")}
           flightAlerts={flightAlerts}
           atcAdvisories={atcAdvisories}
+          atcLastUpdated={atcLastUpdated}
           onMarkRead={markRead}
+          onMarkAllRead={markAllRead}
+          unreadCount={unreadCount}
+          onAddFlight={() => { setActiveTab("map"); setSearchOpen(true); }}
         />
       )}
 
