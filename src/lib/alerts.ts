@@ -45,11 +45,20 @@ interface FlightSnapshot {
   estimatedArr: string | null;
 }
 
+function hasRoute(f: Flight): boolean {
+  return f.origin.code !== "---" && f.destination.code !== "---";
+}
+
+function routeLabel(f: Flight): string {
+  return hasRoute(f) ? `${f.origin.code} → ${f.destination.code}` : f.flightNumber;
+}
+
 function detectChanges(
   prev: FlightSnapshot,
   curr: Flight,
 ): { type: string; title: string; subtitle: string; severity: AlertSeverity }[] {
   const changes: { type: string; title: string; subtitle: string; severity: AlertSeverity }[] = [];
+  const route = routeLabel(curr);
 
   // Departure delay detection
   if (curr.scheduledDep && curr.actualDep) {
@@ -60,7 +69,7 @@ function detectChanges(
       const newTime = new Date(curr.actualDep).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
       changes.push({
         type: "delay",
-        title: `${curr.origin.code} ✈ ${curr.destination.code} · Delayed ${delayMin}m`,
+        title: `${curr.flightNumber} · Delayed ${delayMin}m`,
         subtitle: `New departure ${newTime}`,
         severity: delayMin >= 60 ? "bad" : "warning",
       });
@@ -73,8 +82,8 @@ function detectChanges(
     if (curr.status === "en-route" && (prev.status === "scheduled" || prev.status === "taxiing")) {
       changes.push({
         type: "departure",
-        title: `${curr.origin.code} → ${curr.destination.code} · Departed`,
-        subtitle: `Taxiing for takeoff`,
+        title: `${curr.flightNumber} · Departed`,
+        subtitle: route,
         severity: "good",
       });
     }
@@ -84,7 +93,7 @@ function detectChanges(
       changes.push({
         type: "boarding",
         title: `${curr.flightNumber} · Boarding`,
-        subtitle: `Departing ${curr.origin.code} → ${curr.destination.code}`,
+        subtitle: route,
         severity: "info",
       });
     }
@@ -93,8 +102,8 @@ function detectChanges(
     if (curr.status === "landed" && prev.status === "en-route") {
       changes.push({
         type: "landing",
-        title: `Landed at ${curr.destination.code}`,
-        subtitle: `${curr.origin.code} → ${curr.destination.code} complete`,
+        title: `${curr.flightNumber} · Landed`,
+        subtitle: route,
         severity: "good",
       });
     }
@@ -102,30 +111,39 @@ function detectChanges(
 
   // Descending detection (approaching landing)
   if (!prev.onGround && curr.onGround && prev.altitude > 1000) {
-    changes.push({
-      type: "landing",
-      title: `Landed at ${curr.destination.code}`,
-      subtitle: `${curr.flightNumber} has arrived`,
-      severity: "good",
-    });
+    // Don't duplicate if we already have a landing change from status transition
+    if (!changes.some(c => c.type === "landing")) {
+      changes.push({
+        type: "landing",
+        title: `${curr.flightNumber} · Landed`,
+        subtitle: `${curr.flightNumber} has arrived`,
+        severity: "good",
+      });
+    }
   }
 
   return changes;
 }
 
 // ═══ Flight Alert Monitor Hook ═══
+// Only monitors SAVED flights — not all 5000+ in the feed
 
-export function useFlightAlerts(flights: Flight[], pollingMs = 90000) {
+export function useFlightAlerts(flights: Flight[], savedCallsigns: Set<string>) {
   const [alerts, setAlerts] = useState<FlightAlert[]>([]);
   const [newAlerts, setNewAlerts] = useState<FlightAlert[]>([]); // For toast display
   const snapshotsRef = useRef<Map<string, FlightSnapshot>>(new Map());
-  const prevFlightsRef = useRef<Flight[]>([]);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (flights.length === 0) return;
+    if (flights.length === 0 || savedCallsigns.size === 0) return;
+
+    // Only monitor saved flights
+    const watched = flights.filter(f => savedCallsigns.has(f.callsign));
+    if (watched.length === 0) return;
+
     // Skip first render — just take snapshots
-    if (prevFlightsRef.current.length === 0) {
-      for (const f of flights) {
+    if (!initializedRef.current) {
+      for (const f of watched) {
         snapshotsRef.current.set(f.id, {
           status: f.status,
           altitude: f.altitude,
@@ -135,13 +153,13 @@ export function useFlightAlerts(flights: Flight[], pollingMs = 90000) {
           estimatedArr: f.estimatedArr,
         });
       }
-      prevFlightsRef.current = flights;
+      initializedRef.current = true;
       return;
     }
 
     const batch: FlightAlert[] = [];
 
-    for (const f of flights) {
+    for (const f of watched) {
       const prev = snapshotsRef.current.get(f.id);
       if (!prev) {
         // New flight appeared — snapshot it
@@ -191,8 +209,7 @@ export function useFlightAlerts(flights: Flight[], pollingMs = 90000) {
       setNewAlerts(batch);
     }
 
-    prevFlightsRef.current = flights;
-  }, [flights, pollingMs]);
+  }, [flights, savedCallsigns]);
 
   const dismissToast = useCallback((id: string) => {
     setNewAlerts((prev) => prev.filter((a) => a.id !== id));

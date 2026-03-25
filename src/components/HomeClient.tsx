@@ -91,8 +91,9 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [highlightedCallsign, setHighlightedCallsign] = useState<string | null>(null);
   const [activeAlertBanner, setActiveAlertBanner] = useState<ATCAlert | null>(null);
 
-  // Flight alerts + ATC advisories
-  const { alerts: flightAlerts, newAlerts, dismissToast, markRead } = useFlightAlerts(flights);
+  // Flight alerts: only monitor SAVED flights (not all 5000+)
+  const savedCallsignSet = useMemo(() => new Set(savedFlights.map(f => f.callsign)), [savedFlights]);
+  const { alerts: flightAlerts, newAlerts, dismissToast, markRead } = useFlightAlerts(flights, savedCallsignSet);
   const atcAdvisories = useATCAdvisories(300000); // 5 minutes
 
   // Show alert banner when new alert arrives
