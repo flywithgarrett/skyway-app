@@ -108,9 +108,9 @@ export default function AirportView({ airports, flights, onSelectAirport, onSele
               </div>
             </div>
             <button onClick={() => onSelectAirport(selectedAirport)} style={{
-              background: "rgba(52,211,153,0.08)", border: "none",
+              background: "rgba(52,199,89,0.08)", border: "none",
               padding: "8px 14px", borderRadius: 10, cursor: "pointer",
-              fontSize: 11, fontWeight: 600, color: "#34d399", fontFamily: "inherit",
+              fontSize: 11, fontWeight: 600, color: "#34C759", fontFamily: "inherit",
             }}>
               View on Map
             </button>
@@ -196,7 +196,7 @@ export default function AirportView({ airports, flights, onSelectAirport, onSele
                 </div>
                 <div style={{
                   fontSize: 9, fontWeight: 600, marginTop: 2,
-                  color: f.status === "en-route" ? "#34d399" : f.status === "taxiing" ? "#fbbf24" : f.status === "landed" ? "#94a3b8" : "#60a5fa",
+                  color: f.status === "en-route" ? "#34C759" : f.status === "taxiing" ? "#FF9500" : f.status === "landed" ? "#94a3b8" : "#60a5fa",
                 }}>
                   {f.status === "en-route" ? "EN ROUTE" : f.status === "taxiing" ? "TAXIING" : f.status === "landed" ? "ARRIVED" : "SCHED"}
                 </div>
@@ -294,8 +294,8 @@ export default function AirportView({ airports, flights, onSelectAirport, onSele
               {count > 0 && (
                 <div style={{
                   padding: "4px 10px", borderRadius: 20,
-                  background: "rgba(52,211,153,0.08)",
-                  fontSize: 11, fontWeight: 600, color: "#34d399",
+                  background: "rgba(52,199,89,0.08)",
+                  fontSize: 11, fontWeight: 600, color: "#34C759",
                   flexShrink: 0,
                 }}>
                   {count} flights

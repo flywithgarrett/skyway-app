@@ -118,8 +118,8 @@ export default function SearchOverlay({ flights, airports, onSelect, onSelectAir
                 <div style={{
                   width: 36, height: 36, borderRadius: 10, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  background: "rgba(52,211,153,0.06)",
-                  fontSize: 12, fontWeight: 700, color: "#34d399",
+                  background: "rgba(52,199,89,0.06)",
+                  fontSize: 12, fontWeight: 700, color: "#34C759",
                 }}>
                   {airport.code}
                 </div>

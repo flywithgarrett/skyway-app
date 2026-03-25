@@ -66,10 +66,10 @@ function getTimezoneAbbr(iso: string | null): string {
 
 /* ── Status colors ── */
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  "en-route": { label: "En Route", color: "#34d399" },
+  "en-route": { label: "En Route", color: "#34C759" },
   landed: { label: "Arrived", color: "#94a3b8" },
   scheduled: { label: "Scheduled", color: "#60a5fa" },
-  taxiing: { label: "Taxiing", color: "#fbbf24" },
+  taxiing: { label: "Taxiing", color: "#FF9500" },
   unknown: { label: "Tracking", color: "#94a3b8" },
 };
 
@@ -166,12 +166,12 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
 
           {/* Flight status line */}
           {flight.status === "en-route" && times.remaining && (
-            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#34d399" }}>
+            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#34C759" }}>
               Lands in {times.remaining}
             </div>
           )}
           {flight.status === "taxiing" && (
-            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#fbbf24" }}>
+            <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: "#FF9500" }}>
               Taxiing to gate
             </div>
           )}
@@ -189,14 +189,14 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
                   <div style={{
                     position: "absolute", top: 0, left: 0, bottom: 0,
                     width: `${progressPercent}%`, borderRadius: 2,
-                    background: "linear-gradient(90deg, #34d399, #22d3ee)",
+                    background: "linear-gradient(90deg, #34C759, #22d3ee)",
                   }} />
                   <div style={{
                     position: "absolute", top: "50%", left: `${progressPercent}%`,
                     transform: "translate(-50%, -50%)",
                     width: 10, height: 10, borderRadius: 5,
-                    background: "#fff", border: "2.5px solid #34d399",
-                    boxShadow: "0 0 10px rgba(52,211,153,0.5)",
+                    background: "#fff", border: "2.5px solid #34C759",
+                    boxShadow: "0 0 10px rgba(52,199,89,0.5)",
                   }} />
                 </div>
               )}
@@ -205,7 +205,7 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
               <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 32 }}>
                 {/* Timeline dot */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, width: 16 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 5, background: "#34d399", boxShadow: "0 0 8px rgba(52,211,153,0.4)" }} />
+                  <div style={{ width: 10, height: 10, borderRadius: 5, background: "#34C759", boxShadow: "0 0 8px rgba(52,199,89,0.4)" }} />
                   <div style={{ width: 2, flex: 1, background: "rgba(255,255,255,0.06)", marginTop: 4, minHeight: 60 }} />
                 </div>
                 {/* Content */}
@@ -332,11 +332,11 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
               <button onClick={onShowOnMap} style={{
                 width: "100%", padding: "12px 0", borderRadius: 14, border: "none",
                 cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
-                background: "rgba(52,211,153,0.08)", color: "#34d399",
+                background: "rgba(52,199,89,0.08)", color: "#34C759",
                 transition: "all 0.2s",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.15)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,211,153,0.08)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(52,199,89,0.15)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(52,199,89,0.08)"; }}
               >
                 Show Route on Map
               </button>

@@ -140,9 +140,9 @@ export default function CommunityView() {
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 600,
-                color: activeTab === tab.id ? "#00e5ff" : "rgba(255,255,255,0.4)",
+                color: activeTab === tab.id ? "#0A84FF" : "rgba(255,255,255,0.4)",
                 background: "transparent", border: "none", cursor: "pointer",
-                borderBottom: activeTab === tab.id ? "2px solid #00e5ff" : "2px solid transparent",
+                borderBottom: activeTab === tab.id ? "2px solid #0A84FF" : "2px solid transparent",
                 transition: "all 0.2s ease",
                 letterSpacing: "0.2px",
               }}
@@ -221,11 +221,11 @@ export default function CommunityView() {
               <div style={{
                 width: 44, height: 44, borderRadius: 22, flexShrink: 0,
                 background: post.handle === "@skyway"
-                  ? "linear-gradient(135deg, #00e5ff 0%, #0077b6 100%)"
+                  ? "linear-gradient(135deg, #0A84FF 0%, #0077b6 100%)"
                   : `hsl(${post.id.charCodeAt(0) * 40}, 60%, 35%)`,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: "#fff", fontSize: 14, fontWeight: 700,
-                border: post.handle === "@skyway" ? "2px solid rgba(0,229,255,0.4)" : "none",
+                border: post.handle === "@skyway" ? "2px solid rgba(10,132,255,0.4)" : "none",
               }}>
                 {post.avatar}
               </div>
@@ -236,7 +236,7 @@ export default function CommunityView() {
                   <span style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{post.author}</span>
                   {post.handle === "@skyway" && (
                     <span style={{
-                      background: "linear-gradient(135deg, #00e5ff, #0077b6)",
+                      background: "linear-gradient(135deg, #0A84FF, #0077b6)",
                       color: "#fff", fontSize: 9, fontWeight: 700,
                       padding: "1px 6px", borderRadius: 4, letterSpacing: "0.5px",
                     }}>OFFICIAL</span>
@@ -250,12 +250,12 @@ export default function CommunityView() {
                 {(post.location || post.flightTag) && (
                   <div style={{ display: "flex", gap: 8, marginTop: 3 }}>
                     {post.location && (
-                      <span style={{ color: "rgba(0,229,255,0.6)", fontSize: 11 }}>📍 {post.location}</span>
+                      <span style={{ color: "rgba(10,132,255,0.6)", fontSize: 11 }}>📍 {post.location}</span>
                     )}
                     {post.flightTag && (
                       <span style={{
-                        color: "#00e5ff", fontSize: 11, fontWeight: 600,
-                        background: "rgba(0,229,255,0.1)", padding: "1px 8px",
+                        color: "#0A84FF", fontSize: 11, fontWeight: 600,
+                        background: "rgba(10,132,255,0.1)", padding: "1px 8px",
                         borderRadius: 8, cursor: "pointer",
                       }}>
                         ✈ {post.flightTag}
@@ -293,7 +293,7 @@ export default function CommunityView() {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                     {post.tags.map((tag) => (
                       <span key={tag} style={{
-                        color: "rgba(0,229,255,0.7)", fontSize: 12, cursor: "pointer",
+                        color: "rgba(10,132,255,0.7)", fontSize: 12, cursor: "pointer",
                       }}>
                         #{tag}
                       </span>
@@ -362,7 +362,7 @@ export default function CommunityView() {
               onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <div style={{ color: "#00e5ff", fontSize: 15, fontWeight: 600 }}>{trend.tag}</div>
+              <div style={{ color: "#0A84FF", fontSize: 15, fontWeight: 600 }}>{trend.tag}</div>
               <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, marginTop: 2 }}>{trend.posts} · {trend.desc}</div>
             </div>
           ))}

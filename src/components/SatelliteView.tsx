@@ -25,15 +25,15 @@ function SatCard({ sat, selected, onClick }: { sat: SatPosition; selected: boole
     <button onClick={onClick} style={{
       display: "flex", alignItems: "center", gap: 12,
       width: "100%", padding: "12px 16px", textAlign: "left",
-      background: selected ? "rgba(0,229,255,0.08)" : "transparent",
+      background: selected ? "rgba(10,132,255,0.08)" : "transparent",
       border: "none", cursor: "pointer",
       borderBottom: "1px solid rgba(255,255,255,0.04)",
-      borderLeft: selected ? "3px solid #00e5ff" : "3px solid transparent",
+      borderLeft: selected ? "3px solid #0A84FF" : "3px solid transparent",
       transition: "all 0.15s ease",
     }}>
       <div style={{
         width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-        background: isISS ? "linear-gradient(135deg, #fbbf24, #f59e0b)"
+        background: isISS ? "linear-gradient(135deg, #FF9500, #f59e0b)"
           : isStarlink ? "linear-gradient(135deg, #3b82f6, #1d4ed8)"
           : "linear-gradient(135deg, #6366f1, #4f46e5)",
         display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
@@ -48,7 +48,7 @@ function SatCard({ sat, selected, onClick }: { sat: SatPosition; selected: boole
           ALT {sat.alt.toFixed(0)} km · {(sat.velocity * 3600).toFixed(0)} km/h
         </div>
       </div>
-      <div style={{ fontSize: 10, color: "rgba(0,229,255,0.5)", fontFamily: "monospace" }}>#{sat.id}</div>
+      <div style={{ fontSize: 10, color: "rgba(10,132,255,0.5)", fontFamily: "monospace" }}>#{sat.id}</div>
     </button>
   );
 }
@@ -124,9 +124,9 @@ export default function SatelliteView() {
               {positions.length} objects tracked · Live orbital data
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(52,211,153,0.1)", borderRadius: 12, padding: "6px 12px" }}>
-            <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34d399" }} />
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#34d399" }}>LIVE</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(52,199,89,0.1)", borderRadius: 12, padding: "6px 12px" }}>
+            <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34C759" }} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#34C759" }}>LIVE</span>
           </div>
         </div>
 
@@ -138,9 +138,9 @@ export default function SatelliteView() {
           ]).map((g) => (
             <button key={g.id} onClick={() => setGroup(g.id)} style={{
               flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 600,
-              color: group === g.id ? "#00e5ff" : "rgba(255,255,255,0.35)",
-              background: group === g.id ? "rgba(0,229,255,0.06)" : "transparent",
-              border: group === g.id ? "1px solid rgba(0,229,255,0.15)" : "1px solid transparent",
+              color: group === g.id ? "#0A84FF" : "rgba(255,255,255,0.35)",
+              background: group === g.id ? "rgba(10,132,255,0.06)" : "transparent",
+              border: group === g.id ? "1px solid rgba(10,132,255,0.15)" : "1px solid transparent",
               borderRadius: 10, cursor: "pointer", transition: "all 0.2s ease",
             }}>
               <span style={{ marginRight: 6 }}>{g.icon}</span>{g.label}
@@ -216,16 +216,16 @@ export default function SatelliteView() {
               }} />
               <div style={{
                 position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
-                width: 120, height: 120, borderRadius: 60, border: "1px solid rgba(0,229,255,0.15)",
+                width: 120, height: 120, borderRadius: 60, border: "1px solid rgba(10,132,255,0.15)",
               }} />
               <div style={{
                 position: "absolute",
                 left: `${50 + 28 * Math.cos((selected.lng * Math.PI) / 180)}%`,
                 top: `${50 - 28 * Math.sin((selected.lat * Math.PI) / 180)}%`,
-                width: 8, height: 8, borderRadius: 4, background: "#00e5ff",
-                boxShadow: "0 0 12px rgba(0,229,255,0.6)", transform: "translate(-50%,-50%)",
+                width: 8, height: 8, borderRadius: 4, background: "#0A84FF",
+                boxShadow: "0 0 12px rgba(10,132,255,0.6)", transform: "translate(-50%,-50%)",
               }} />
-              <div style={{ position: "absolute", bottom: 8, left: 12, fontSize: 10, color: "rgba(0,229,255,0.4)", fontFamily: "monospace" }}>
+              <div style={{ position: "absolute", bottom: 8, left: 12, fontSize: 10, color: "rgba(10,132,255,0.4)", fontFamily: "monospace" }}>
                 Orbit: {selected.period.toFixed(1)} min · {selected.alt < 600 ? "LEO" : selected.alt < 2000 ? "MEO" : "GEO"}
               </div>
             </div>
@@ -245,16 +245,16 @@ export default function SatelliteView() {
                   border: "1px solid rgba(255,255,255,0.04)",
                 }}>
                   <div style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.12em", marginBottom: 4 }}>{d.label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", color: d.cyan ? "#00e5ff" : "rgba(255,255,255,0.7)" }}>{d.value}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, fontFamily: "monospace", color: d.cyan ? "#0A84FF" : "rgba(255,255,255,0.7)" }}>{d.value}</div>
                 </div>
               ))}
             </div>
 
             <div style={{
               marginTop: 16, padding: "12px 14px", borderRadius: 12,
-              background: "rgba(0,229,255,0.04)", border: "1px solid rgba(0,229,255,0.08)",
+              background: "rgba(10,132,255,0.04)", border: "1px solid rgba(10,132,255,0.08)",
             }}>
-              <div style={{ fontSize: 10, color: "rgba(0,229,255,0.5)", letterSpacing: "0.12em", marginBottom: 6 }}>ORBIT CLASS</div>
+              <div style={{ fontSize: 10, color: "rgba(10,132,255,0.5)", letterSpacing: "0.12em", marginBottom: 6 }}>ORBIT CLASS</div>
               <div style={{ fontSize: 13, color: "#fff", fontWeight: 500 }}>
                 {selected.alt < 600 ? "Low Earth Orbit (LEO)" : selected.alt < 2000 ? "MEO" : "GEO"}
               </div>
