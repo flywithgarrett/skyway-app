@@ -9,6 +9,7 @@ import Panel from "@/components/Panel";
 import FlightListSidebar from "@/components/FlightListSidebar";
 import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
+import NotificationToast from "@/components/NotificationToast";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
 import AirportView from "@/components/AirportView";
@@ -17,6 +18,7 @@ import { useATCFeed } from "@/hooks/useATCFeed";
 import type { ATCAlert } from "@/hooks/useATCFeed";
 import { airports } from "@/lib/data";
 import { useLiveFlights, useFlightDetails } from "@/lib/api";
+import { useFlightAlerts, useATCAdvisories } from "@/lib/alerts";
 import { Flight, Airport } from "@/lib/types";
 
 interface ISSPosition {
@@ -81,6 +83,10 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const { transcripts: atcTranscripts, alerts: atcAlerts, isConnected: atcConnected, isDemo: atcIsDemo } = useATCFeed(atcAirport);
   const [highlightedCallsign, setHighlightedCallsign] = useState<string | null>(null);
   const [activeAlertBanner, setActiveAlertBanner] = useState<ATCAlert | null>(null);
+
+  // Flight alerts + ATC advisories
+  const { alerts: flightAlerts, newAlerts, dismissToast, markRead } = useFlightAlerts(flights);
+  const atcAdvisories = useATCAdvisories(300000); // 5 minutes
 
   // Show alert banner when new alert arrives
   useEffect(() => {
@@ -221,6 +227,9 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         <AlertsView
           onSelectFlight={(f) => setSelectedFlight(f)}
           onSwitchToMap={() => setActiveTab("map")}
+          flightAlerts={flightAlerts}
+          atcAdvisories={atcAdvisories}
+          onMarkRead={markRead}
         />
       )}
 
@@ -274,6 +283,17 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       )}
 
       <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
+
+      {/* Notification toasts */}
+      <NotificationToast
+        alerts={newAlerts}
+        onDismiss={dismissToast}
+        onTap={(alert) => {
+          // Find the flight and open it
+          const f = flights.find(fl => fl.id === alert.flightId);
+          if (f) { setSelectedFlight(f); setActiveTab("map"); }
+        }}
+      />
 
       {searchOpen && (
         <SearchOverlay
