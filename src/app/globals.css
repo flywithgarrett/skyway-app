@@ -1,6 +1,18 @@
-@import "tailwindcss";
+@import "tailwindcss" layer(utilities);
 
-/* ═══ Flighty-Inspired Design System ═══ */
+/* ═══ Forced Base Styles — override Tailwind preflight ═══ */
+
+html, body {
+  background: #0A0A0F !important;
+  color: #FFFFFF !important;
+  font-family: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, BlinkMacSystemFont, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ═══ Flighty Design Tokens ═══ */
 
 :root {
   /* Backgrounds */
