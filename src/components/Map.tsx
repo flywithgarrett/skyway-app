@@ -36,11 +36,11 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 function getIconSize(effectiveZoom: number, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
   if (isGround) return effectiveZoom >= 14 ? 36 : 28;
-  if (effectiveZoom >= 12) return 44;
-  if (effectiveZoom >= 9) return 36;
-  if (effectiveZoom >= 7) return 30;
-  if (effectiveZoom >= 5) return 26;
-  return 22;
+  if (effectiveZoom >= 12) return 52;
+  if (effectiveZoom >= 9) return 44;
+  if (effectiveZoom >= 7) return 38;
+  if (effectiveZoom >= 5) return 32;
+  return 28;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -69,13 +69,13 @@ function getVisibleFlights(
   // At low zoom, space far apart. At high zoom, show everything.
   const minSpacing = zoom < 4  ? 3.0  :
                      zoom < 5  ? 2.0  :
-                     zoom < 6  ? 1.2  :
-                     zoom < 7  ? 0.7  :
-                     zoom < 8  ? 0.4  :
-                     zoom < 9  ? 0.2  :
-                     zoom < 10 ? 0.10 :
-                     zoom < 11 ? 0.05 :
-                     zoom < 12 ? 0.02 : 0;
+                     zoom < 6  ? 1.0  :
+                     zoom < 7  ? 0.5  :
+                     zoom < 8  ? 0.25 :
+                     zoom < 9  ? 0.12 :
+                     zoom < 10 ? 0.06 :
+                     zoom < 11 ? 0.03 :
+                     zoom < 12 ? 0.01 : 0;
 
   const spaceFlights = (flights: Flight[]): Flight[] => {
     if (minSpacing === 0) {
