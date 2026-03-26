@@ -358,15 +358,30 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         is3dRef.current = true;
         setMapReady(true);
 
-        // Cinematic intro: slow spin to US
-        setTimeout(() => {
-          if (map3d.flyCameraTo) {
-            map3d.flyCameraTo({
-              endCamera: HOME_CAMERA,
-              durationMillis: 4000,
-            });
-          }
-        }, 800);
+        // Cinematic intro: first visit gets full animation, repeat visits get quick settle
+        const hasVisited = localStorage.getItem("skyway_hasVisited");
+        if (!hasVisited) {
+          // First visit: dramatic ISS-altitude descent over 4 seconds
+          setTimeout(() => {
+            if (map3d.flyCameraTo) {
+              map3d.flyCameraTo({
+                endCamera: HOME_CAMERA,
+                durationMillis: 4000,
+              });
+            }
+          }, 1200);
+          try { localStorage.setItem("skyway_hasVisited", "1"); } catch {}
+        } else {
+          // Return visit: quick settle to home view
+          setTimeout(() => {
+            if (map3d.flyCameraTo) {
+              map3d.flyCameraTo({
+                endCamera: HOME_CAMERA,
+                durationMillis: 1500,
+              });
+            }
+          }, 300);
+        }
 
       } catch (err) {
         console.warn("3D failed, using 2D:", err);

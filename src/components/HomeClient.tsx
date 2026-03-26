@@ -11,6 +11,7 @@ import SearchOverlay from "@/components/SearchOverlay";
 import AlertsView from "@/components/AlertsView";
 import NotificationToast from "@/components/NotificationToast";
 import AuthModal from "@/components/AuthModal";
+import LoadingScreen from "@/components/LoadingScreen";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
 import AirportView from "@/components/AirportView";
@@ -157,7 +158,16 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   };
 
   return (
-    <div className="relative w-full h-screen overflow-hidden" style={{ background: "#030610" }}>
+    <div style={{ position: "relative", width: "100%", height: "100vh", overflow: "hidden", background: "#0A0A0F" }}>
+      {/* Loading screen */}
+      <LoadingScreen />
+
+      {/* Atmosphere glow — subtle blue edge around globe */}
+      <div style={{
+        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
+        background: "radial-gradient(ellipse at center, transparent 55%, rgba(10,132,255,0.06) 75%, rgba(10,132,255,0.12) 100%)",
+      }} />
+
       <MapLoader
         flights={flights}
         airports={airports}
