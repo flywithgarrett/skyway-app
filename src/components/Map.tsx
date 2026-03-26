@@ -35,12 +35,12 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 /* ── Zoom-based icon sizing — simple step function ── */
 function getIconSize(effectiveZoom: number, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  if (isGround) return effectiveZoom >= 14 ? 44 : 36;
-  if (effectiveZoom >= 12) return 56;
-  if (effectiveZoom >= 9) return 48;
-  if (effectiveZoom >= 7) return 42;
-  if (effectiveZoom >= 5) return 36;
-  return 32;
+  if (isGround) return effectiveZoom >= 14 ? 36 : 28;
+  if (effectiveZoom >= 12) return 44;
+  if (effectiveZoom >= 9) return 36;
+  if (effectiveZoom >= 7) return 30;
+  if (effectiveZoom >= 5) return 26;
+  return 22;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -53,42 +53,87 @@ function isGroundTraffic(f: Flight): boolean {
   return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
 }
 
-/* ── Simple visibility culling: viewport filter + even subsample ── */
+/* ── Grid-based density limiting with minimum spacing per zoom ── */
 function getVisibleFlights(
   allFlights: Flight[],
   effectiveZoom: number,
   bounds: { north: number; south: number; east: number; west: number } | null,
 ): Flight[] {
-  // Globe view (zoom < 5): show ALL airborne flights, no sampling
-  if (effectiveZoom < 5) {
-    return allFlights.filter(f => !isGroundTraffic(f));
-  }
+  const zoom = Math.round(effectiveZoom);
 
-  // Hide ground traffic at zoom < 12
-  const candidates = effectiveZoom >= 12
-    ? allFlights
-    : allFlights.filter(f => !isGroundTraffic(f));
+  // Separate airborne vs ground
+  const airborne = allFlights.filter(f => !isGroundTraffic(f));
+  const ground = allFlights.filter(f => isGroundTraffic(f));
 
-  // If no bounds available, return all candidates (no cap)
-  if (!bounds) {
-    return candidates;
-  }
+  // Minimum spacing in degrees between any two icons.
+  // At low zoom, space far apart. At high zoom, show everything.
+  const minSpacing = zoom < 4  ? 3.0  :
+                     zoom < 5  ? 2.0  :
+                     zoom < 6  ? 1.2  :
+                     zoom < 7  ? 0.7  :
+                     zoom < 8  ? 0.4  :
+                     zoom < 9  ? 0.2  :
+                     zoom < 10 ? 0.10 :
+                     zoom < 11 ? 0.05 :
+                     zoom < 12 ? 0.02 : 0;
 
-  // Filter to viewport bounds — show all in view, no cap
-  const inView = candidates.filter(f => {
-    const lat = f.currentLat;
-    const lng = f.currentLng;
-    // Handle wrapping for east/west
-    if (bounds.west <= bounds.east) {
-      return lat >= bounds.south && lat <= bounds.north &&
-             lng >= bounds.west && lng <= bounds.east;
+  const spaceFlights = (flights: Flight[]): Flight[] => {
+    if (minSpacing === 0) {
+      // Zoom 12+: show everything in bounds
+      if (!bounds) return flights;
+      return flights.filter(f => inBounds(f, bounds));
     }
-    // Wraps around antimeridian
-    return lat >= bounds.south && lat <= bounds.north &&
-           (lng >= bounds.west || lng <= bounds.east);
-  });
 
-  return inView;
+    // Sort by altitude descending — higher flights take priority (more interesting)
+    const sorted = [...flights].sort((a, b) => b.altitude - a.altitude);
+    const selected: Flight[] = [];
+    const occupied: { lat: number; lng: number }[] = [];
+
+    for (const f of sorted) {
+      const lat = f.currentLat;
+      const lng = f.currentLng;
+
+      // Skip if outside current viewport (when bounds available)
+      if (bounds && !inBounds(f, bounds)) continue;
+
+      // Skip if too close to an already-selected flight
+      let tooClose = false;
+      for (const pos of occupied) {
+        if (Math.abs(pos.lat - lat) < minSpacing && Math.abs(pos.lng - lng) < minSpacing) {
+          tooClose = true;
+          break;
+        }
+      }
+
+      if (!tooClose) {
+        selected.push(f);
+        occupied.push({ lat, lng });
+      }
+    }
+    return selected;
+  };
+
+  // Globe view: include all airborne (spacing handles density)
+  if (zoom < 5) {
+    return spaceFlights(airborne);
+  }
+
+  // Zoom 12+: show ground aircraft too
+  if (zoom >= 12) {
+    return [...spaceFlights(airborne), ...spaceFlights(ground)];
+  }
+
+  // Mid zoom: airborne only with spacing
+  return spaceFlights(airborne);
+}
+
+function inBounds(f: Flight, bounds: { north: number; south: number; east: number; west: number }): boolean {
+  const lat = f.currentLat;
+  const lng = f.currentLng;
+  if (bounds.west <= bounds.east) {
+    return lat >= bounds.south && lat <= bounds.north && lng >= bounds.west && lng <= bounds.east;
+  }
+  return lat >= bounds.south && lat <= bounds.north && (lng >= bounds.west || lng <= bounds.east);
 }
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
