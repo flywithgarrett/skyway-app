@@ -35,12 +35,12 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 /* ── Zoom-based icon sizing — simple step function ── */
 function getIconSize(effectiveZoom: number, isSel: boolean, _isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  if (effectiveZoom >= 12) return 52;
-  if (effectiveZoom >= 9) return 48;
-  if (effectiveZoom >= 7) return 46;
-  if (effectiveZoom >= 5) return 44;
-  if (effectiveZoom >= 3) return 64;
-  return 80;
+  if (effectiveZoom >= 12) return 48;
+  if (effectiveZoom >= 9) return 44;
+  if (effectiveZoom >= 7) return 42;
+  if (effectiveZoom >= 5) return 48;
+  if (effectiveZoom >= 3) return 72;
+  return 96;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -53,7 +53,7 @@ function isGroundTraffic(f: Flight): boolean {
   return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
 }
 
-/* ── Flight visibility: lat/lng grid at globe, viewport filter at zoom ── */
+/* ── Flight visibility ── */
 function getVisibleFlights(
   allFlights: Flight[],
   effectiveZoom: number,
@@ -62,15 +62,10 @@ function getVisibleFlights(
   const zoom = effectiveZoom;
   const airborne = allFlights.filter(f => !isGroundTraffic(f));
 
-  // LOW ZOOM (globe view): pure lat/lng grid — covers entire world including oceans
-  if (zoom < 6) {
-    const CELL = zoom < 3 ? 0.5 : 0.2;
-    const grid: Record<string, Flight> = {};
-    for (const f of airborne) {
-      const key = `${Math.floor(f.currentLat / CELL)},${Math.floor(f.currentLng / CELL)}`;
-      if (!grid[key]) grid[key] = f;
-    }
-    return Object.values(grid); // ~800-1200 globally
+  // GLOBE + COUNTRY VIEW (zoom < 8): show EVERY airborne flight, NO filtering.
+  // The 3D map can handle 5000+ markers. No grid, no sampling, no caps.
+  if (zoom < 8) {
+    return airborne;
   }
 
   // ZOOM 12+: show everything including ground
@@ -79,24 +74,10 @@ function getVisibleFlights(
     return [...airborne, ...allFlights.filter(f => isGroundTraffic(f))].filter(f => inBounds(f, bounds));
   }
 
-  // MID ZOOM (6-11): viewport filter + lat/lng grid spacing
-  if (!bounds) return airborne.slice(0, 500);
+  // MID ZOOM (8-11): viewport filter only
+  if (!bounds) return airborne;
 
-  const inView = airborne.filter(f => inBounds(f, bounds));
-
-  // At zoom 10+, show all in viewport
-  if (zoom >= 10) return inView;
-
-  // Grid spacing for mid-zoom: smaller cells = more flights visible
-  const cellSize = zoom < 7 ? 1.0 : zoom < 8 ? 0.5 : zoom < 9 ? 0.25 : 0.12;
-  const midGrid: Record<string, Flight> = {};
-  // Sort by altitude desc so cruise flights take priority
-  const sorted = [...inView].sort((a, b) => b.altitude - a.altitude);
-  for (const f of sorted) {
-    const key = `${Math.floor(f.currentLat / cellSize)},${Math.floor(f.currentLng / cellSize)}`;
-    if (!midGrid[key]) midGrid[key] = f;
-  }
-  return Object.values(midGrid);
+  return airborne.filter(f => inBounds(f, bounds));
 }
 
 function inBounds(f: Flight, bounds: { north: number; south: number; east: number; west: number }): boolean {
