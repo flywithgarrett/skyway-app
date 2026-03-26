@@ -458,6 +458,7 @@ export default function ATCPanel({
       {/* ── Expanded Panel ── */}
       {expanded && (
         <div
+          id="atc-panel"
           style={{
             position: "fixed",
             right: 0,

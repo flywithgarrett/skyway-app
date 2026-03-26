@@ -32,7 +32,7 @@ export default function FlightListSidebar({ flights }: AviationStatsProps) {
   ];
 
   return (
-    <div style={{
+    <div id="stats-panel" style={{
       position: "fixed", top: 64, left: 16,
       background: "rgba(17,17,24,0.88)",
       backdropFilter: "blur(20px) saturate(180%)",

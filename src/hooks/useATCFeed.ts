@@ -36,7 +36,7 @@ interface UseATCFeedReturn {
 }
 
 const MAX_TRANSCRIPTS = 100;
-const DEMO_FALLBACK_AFTER = 2; // fall back to demo after N failed WS attempts
+const DEMO_FALLBACK_AFTER = 0; // Immediately use demo — no real WS server
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Demo transcript generator — realistic ATC communications per airport
@@ -203,82 +203,12 @@ export function useATCFeed(activeAirport: string | null): UseATCFeedReturn {
   }, []);
 
   const connect = useCallback(() => {
-    // Don't try WS if already in demo mode
-    if (isDemoRef.current) return;
-
-    // Clean up existing connection
-    if (wsRef.current) {
-      try { wsRef.current.close(); } catch {}
-      wsRef.current = null;
+    // No real WS server — go straight to demo mode
+    const airport = activeAirportRef.current;
+    if (airport) {
+      startDemo(airport);
     }
-
-    try {
-      const ws = new WebSocket(WS_URL);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        stopDemo();
-        failCountRef.current = 0;
-        backoffRef.current = 1000;
-
-        const airport = activeAirportRef.current;
-        if (airport) {
-          ws.send(JSON.stringify({ subscribe: airport }));
-          subscribedRef.current = airport;
-        }
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "transcript") {
-            const t = data as ATCTranscript;
-            setTranscripts((prev) => {
-              const next = [t, ...prev];
-              return next.length > MAX_TRANSCRIPTS ? next.slice(0, MAX_TRANSCRIPTS) : next;
-            });
-            if (t.callsign) setActiveCallsign(t.callsign);
-          }
-          if (data.type === "alert") {
-            setAlerts((prev) => [data as ATCAlert, ...prev].slice(0, 50));
-          }
-        } catch {}
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        wsRef.current = null;
-        failCountRef.current++;
-
-        const airport = activeAirportRef.current;
-        if (failCountRef.current >= DEMO_FALLBACK_AFTER && airport) {
-          startDemo(airport);
-          return;
-        }
-
-        const delay = Math.min(backoffRef.current, 15000);
-        backoffRef.current = Math.min(backoffRef.current * 2, 15000);
-        reconnectTimer.current = setTimeout(connect, delay);
-      };
-
-      ws.onerror = () => {
-        // onclose will fire after onerror
-      };
-    } catch {
-      failCountRef.current++;
-
-      const airport = activeAirportRef.current;
-      if (failCountRef.current >= DEMO_FALLBACK_AFTER && airport) {
-        startDemo(airport);
-        return;
-      }
-
-      const delay = Math.min(backoffRef.current, 15000);
-      backoffRef.current = Math.min(backoffRef.current * 2, 15000);
-      reconnectTimer.current = setTimeout(connect, delay);
-    }
-  }, [startDemo, stopDemo]);
+  }, [startDemo]);
 
   // Connect when airport changes
   useEffect(() => {

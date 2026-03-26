@@ -285,3 +285,23 @@ body {
 canvas {
   outline: none !important;
 }
+
+/* ═══ Mobile Responsive ═══ */
+
+@media (max-width: 640px) {
+  /* Hide stats panel on mobile — it overlaps ATC and map */
+  #stats-panel {
+    display: none !important;
+  }
+
+  /* Make ATC panel full-width on mobile */
+  #atc-panel {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    top: 52px !important;
+    bottom: 68px !important;
+  }
+}
