@@ -36,11 +36,11 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 function getIconSize(effectiveZoom: number, isSel: boolean, isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
   if (isGround) return effectiveZoom >= 14 ? 36 : 28;
-  if (effectiveZoom >= 12) return 52;
-  if (effectiveZoom >= 9) return 44;
-  if (effectiveZoom >= 7) return 38;
-  if (effectiveZoom >= 5) return 32;
-  return 28;
+  if (effectiveZoom >= 12) return 44;
+  if (effectiveZoom >= 9) return 38;
+  if (effectiveZoom >= 7) return 34;
+  if (effectiveZoom >= 5) return 30;
+  return 42; // Globe view = largest (viewing from far away)
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -86,32 +86,28 @@ function getVisibleFlights(
     return inView;
   }
 
-  const spaceFlights = (flights: Flight[]): Flight[] => {
-    // Sort by altitude descending — higher flights take priority
+  const spaceFlights = (flights: Flight[], pixelGap: number, useBounds: boolean, maxCount: number): Flight[] => {
     const sorted = [...flights].sort((a, b) => b.altitude - a.altitude);
     const selected: Flight[] = [];
-    // Use a grid for O(1) proximity checks instead of O(n) linear scan
     const gridCells = new Map<string, boolean>();
 
-    // Compute spacing in degrees at the center of the viewport
     const centerLat = bounds ? (bounds.north + bounds.south) / 2 : 35;
     const { dLat, dLng } = degreesPerPixel(zoom, centerLat);
-    const spacingLat = dLat * MIN_PIXEL_GAP;
-    const spacingLng = dLng * MIN_PIXEL_GAP;
+    const spacingLat = dLat * pixelGap;
+    const spacingLng = dLng * pixelGap;
 
     for (const f of sorted) {
+      if (selected.length >= maxCount) break;
       const lat = f.currentLat;
       const lng = f.currentLng;
 
-      // At zoom >= 5, skip if outside viewport
-      if (zoom >= 5 && bounds && !inBounds(f, bounds)) continue;
+      // Only filter by bounds when useBounds is true
+      if (useBounds && bounds && !inBounds(f, bounds)) continue;
 
-      // Grid cell for this flight
       const cellX = Math.floor(lng / spacingLng);
       const cellY = Math.floor(lat / spacingLat);
       const cellKey = `${cellX},${cellY}`;
 
-      // Check this cell and 8 neighbors for conflicts
       let tooClose = false;
       for (let dx = -1; dx <= 1 && !tooClose; dx++) {
         for (let dy = -1; dy <= 1 && !tooClose; dy++) {
@@ -129,13 +125,14 @@ function getVisibleFlights(
     return selected;
   };
 
-  // Globe view (zoom < 5): space all airborne flights globally
-  if (zoom < 5) {
-    return spaceFlights(airborne);
+  // Globe/country view (zoom < 6): show flights GLOBALLY, no bounds filtering
+  // 14px gap, cap at 2000 — covers Atlantic, Pacific, Europe, Asia
+  if (zoom < 6) {
+    return spaceFlights(airborne, 14, false, 2000);
   }
 
-  // Mid zoom (5-11): space airborne only
-  return spaceFlights(airborne);
+  // Mid zoom (6-11): space airborne in viewport
+  return spaceFlights(airborne, MIN_PIXEL_GAP, true, 5000);
 }
 
 function inBounds(f: Flight, bounds: { north: number; south: number; east: number; west: number }): boolean {
