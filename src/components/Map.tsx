@@ -35,12 +35,12 @@ const GROUND_SELECT_MAX_RANGE = 5000;
 /* ── Zoom-based icon sizing — simple step function ── */
 function getIconSize(effectiveZoom: number, isSel: boolean, _isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  if (effectiveZoom >= 12) return 44;
-  if (effectiveZoom >= 9) return 40;
-  if (effectiveZoom >= 7) return 38;
-  if (effectiveZoom >= 5) return 36;
-  if (effectiveZoom >= 3) return 52;
-  return 64;
+  if (effectiveZoom >= 12) return 48;
+  if (effectiveZoom >= 9) return 44;
+  if (effectiveZoom >= 7) return 42;
+  if (effectiveZoom >= 5) return 40;
+  if (effectiveZoom >= 3) return 56;
+  return 72;
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -64,7 +64,7 @@ function getVisibleFlights(
 
   // LOW ZOOM (globe view): pure lat/lng grid — covers entire world including oceans
   if (zoom < 6) {
-    const CELL = zoom < 3 ? 1.5 : 0.8;
+    const CELL = zoom < 3 ? 0.8 : 0.4;
     const grid: Record<string, Flight> = {};
     for (const f of airborne) {
       const key = `${Math.floor(f.currentLat / CELL)},${Math.floor(f.currentLng / CELL)}`;
