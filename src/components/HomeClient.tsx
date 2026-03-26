@@ -14,6 +14,7 @@ import AuthModal from "@/components/AuthModal";
 import LoadingScreen from "@/components/LoadingScreen";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
+import MyFlightsView from "@/components/MyFlightsView";
 import AirportView from "@/components/AirportView";
 import ATCPanel, { ATCAlertBanner } from "@/components/ATCPanel";
 import { useATCFeed } from "@/hooks/useATCFeed";
@@ -55,11 +56,6 @@ const FlightDetailPanel = dynamic(() => import("@/components/FlightDetailPanel")
 type Tab = "map" | "airports" | "flights" | "satellites" | "community" | "alerts";
 
 const placeholders: Record<string, { title: string; icon: string; description: string }> = {
-  flights: {
-    title: "Flight Board",
-    icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M21 16v-2l-8-5V3.5A1.5 1.5 0 0 0 11.5 2 1.5 1.5 0 0 0 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>`,
-    description: "Live departure and arrival boards with real-time status updates, gate assignments, and delay tracking.",
-  },
   community: {
     title: "Community",
     icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>`,
@@ -162,10 +158,16 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       {/* Loading screen */}
       <LoadingScreen />
 
-      {/* Atmosphere glow — subtle blue edge around globe */}
+      {/* Atmosphere glow — centered ellipse behind globe */}
       <div style={{
-        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
-        background: "radial-gradient(ellipse at center, transparent 55%, rgba(10,132,255,0.06) 75%, rgba(10,132,255,0.12) 100%)",
+        position: "fixed",
+        top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "90vw", height: "90vh",
+        borderRadius: "50%",
+        background: "radial-gradient(ellipse, transparent 55%, rgba(10,132,255,0.06) 75%, rgba(10,132,255,0.12) 100%)",
+        pointerEvents: "none",
+        zIndex: 1,
       }} />
 
       <MapLoader
@@ -260,6 +262,18 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           flights={flights}
           onSelectAirport={handleSelectAirport}
           onSelectFlight={(f) => { setSelectedFlight(f); setActiveTab("map"); }}
+        />
+      )}
+
+      {activeTab === "flights" && (
+        <MyFlightsView
+          savedFlights={savedFlights}
+          liveFights={flights}
+          onSelectFlight={(f) => { setSelectedFlight(f); setActiveTab("map"); }}
+          onUnsave={unsaveFlight}
+          onAddFlight={() => { setActiveTab("map"); setSearchOpen(true); }}
+          isSignedIn={!!user}
+          onSignIn={() => setAuthOpen(true)}
         />
       )}
 

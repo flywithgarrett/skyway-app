@@ -59,10 +59,9 @@ function getVisibleFlights(
   effectiveZoom: number,
   bounds: { north: number; south: number; east: number; west: number } | null,
 ): Flight[] {
-  // Globe view (zoom < 5): take every 10th airborne flight for global spread
+  // Globe view (zoom < 5): show ALL airborne flights, no sampling
   if (effectiveZoom < 5) {
-    const airborne = allFlights.filter(f => !isGroundTraffic(f));
-    return airborne.filter((_, i) => i % 2 === 0);
+    return allFlights.filter(f => !isGroundTraffic(f));
   }
 
   // Hide ground traffic at zoom < 12
@@ -70,14 +69,12 @@ function getVisibleFlights(
     ? allFlights
     : allFlights.filter(f => !isGroundTraffic(f));
 
-  // If no bounds available, subsample
+  // If no bounds available, return all candidates (no cap)
   if (!bounds) {
-    if (candidates.length <= 600) return candidates;
-    const step = Math.ceil(candidates.length / 600);
-    return candidates.filter((_, i) => i % step === 0);
+    return candidates;
   }
 
-  // Filter to viewport bounds
+  // Filter to viewport bounds — show all in view, no cap
   const inView = candidates.filter(f => {
     const lat = f.currentLat;
     const lng = f.currentLng;
@@ -91,10 +88,7 @@ function getVisibleFlights(
            (lng >= bounds.west || lng <= bounds.east);
   });
 
-  // If too many in viewport, evenly subsample
-  if (inView.length <= 600) return inView;
-  const step = Math.ceil(inView.length / 600);
-  return inView.filter((_, i) => i % step === 0);
+  return inView;
 }
 const DAY_NIGHT_FADE_MIN = 300000;  // 300km
 const DAY_NIGHT_FADE_MAX = 2300000; // 2300km
