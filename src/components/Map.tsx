@@ -59,7 +59,7 @@ function getVisibleFlights(
 
   // LOW ZOOM (globe view): pure lat/lng grid — covers entire world including oceans
   if (zoom < 6) {
-    const CELL = 4; // degrees per grid cell
+    const CELL = 1; // degrees per grid cell
     const grid: Record<string, Flight> = {};
     for (const f of airborne) {
       const key = `${Math.floor(f.currentLat / CELL)},${Math.floor(f.currentLng / CELL)}`;
