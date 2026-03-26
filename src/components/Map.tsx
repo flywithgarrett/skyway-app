@@ -33,14 +33,9 @@ const MAX_POSITION_HISTORY = 200;
 const GROUND_SELECT_MAX_RANGE = 5000;
 
 /* ── Zoom-based icon sizing — simple step function ── */
-function getIconSize(effectiveZoom: number, isSel: boolean, _isGround: boolean): number {
+function getIconSize(_effectiveZoom: number, isSel: boolean, _isGround: boolean): number {
   if (isSel) return MARKER_SIZE_SELECTED;
-  if (effectiveZoom >= 12) return 48;
-  if (effectiveZoom >= 9) return 44;
-  if (effectiveZoom >= 7) return 42;
-  if (effectiveZoom >= 5) return 48;
-  if (effectiveZoom >= 3) return 72;
-  return 96;
+  return 38; // Constant size — grid cells are calibrated to prevent overlap
 }
 
 /* ── Strict color logic: WHITE = airborne, ORANGE = ground. Final. ── */
@@ -53,31 +48,43 @@ function isGroundTraffic(f: Flight): boolean {
   return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
 }
 
-/* ── Flight visibility ── */
+/* ── Flight visibility: pixel-calibrated grid ── */
 function getVisibleFlights(
   allFlights: Flight[],
   effectiveZoom: number,
   bounds: { north: number; south: number; east: number; west: number } | null,
 ): Flight[] {
-  const zoom = effectiveZoom;
+  const zoom = Math.round(effectiveZoom);
   const airborne = allFlights.filter(f => !isGroundTraffic(f));
 
-  // GLOBE + COUNTRY VIEW (zoom < 8): show EVERY airborne flight, NO filtering.
-  // The 3D map can handle 5000+ markers. No grid, no sampling, no caps.
-  if (zoom < 8) {
-    return airborne;
+  // Cell size in degrees — calibrated so 38px icons in adjacent cells don't overlap.
+  // At each zoom level, 1° ≈ X pixels on a Mercator projection:
+  // zoom 3 ≈ 5px/° → 8° cells | zoom 4 ≈ 10px/° → 4° cells
+  // zoom 5 ≈ 20px/° → 2° cells | zoom 6 ≈ 40px/° → 1° cells
+  // zoom 7 ≈ 80px/° → 0.5° cells | zoom 8 ≈ 160px/° → 0.25° cells
+  // zoom 9+ → show all in viewport, no grid needed
+  const CELL = zoom <= 3 ? 8 : zoom <= 4 ? 4 : zoom <= 5 ? 2 :
+               zoom <= 6 ? 1 : zoom <= 7 ? 0.5 : zoom <= 8 ? 0.25 : 0;
+
+  // Zoom 9+: show everything in viewport (or all if no bounds)
+  if (CELL === 0) {
+    if (zoom >= 12) {
+      const all = [...airborne, ...allFlights.filter(f => isGroundTraffic(f))];
+      return bounds ? all.filter(f => inBounds(f, bounds)) : all;
+    }
+    return bounds ? airborne.filter(f => inBounds(f, bounds)) : airborne;
   }
 
-  // ZOOM 12+: show everything including ground
-  if (zoom >= 12) {
-    if (!bounds) return [...airborne, ...allFlights.filter(f => isGroundTraffic(f))];
-    return [...airborne, ...allFlights.filter(f => isGroundTraffic(f))].filter(f => inBounds(f, bounds));
+  // Grid-based selection: one flight per cell, globally (no bounds filter at low zoom)
+  const grid: Record<string, Flight> = {};
+  for (const f of airborne) {
+    const key = `${Math.floor(f.currentLat / CELL)},${Math.floor(f.currentLng / CELL)}`;
+    // Keep the highest-altitude flight in each cell (cruise = most interesting)
+    if (!grid[key] || f.altitude > grid[key].altitude) {
+      grid[key] = f;
+    }
   }
-
-  // MID ZOOM (8-11): viewport filter only
-  if (!bounds) return airborne;
-
-  return airborne.filter(f => inBounds(f, bounds));
+  return Object.values(grid);
 }
 
 function inBounds(f: Flight, bounds: { north: number; south: number; east: number; west: number }): boolean {
