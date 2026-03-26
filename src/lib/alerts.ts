@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Flight } from "./types";
+import { isCheckinOpen, getCheckinUrl } from "./checkin";
 
 // ═══ Alert Types & Colors ═══
 
-export type AlertType = "gate_change" | "delay" | "boarding" | "departure" | "landing" | "cancelled" | "baggage" | "atc";
+export type AlertType = "gate_change" | "delay" | "boarding" | "departure" | "landing" | "cancelled" | "baggage" | "atc" | "checkin" | "morning";
 
 export const ALERT_CONFIG: Record<AlertType, { icon: string; color: string }> = {
   gate_change: { icon: "🚪", color: "#FF9500" },
@@ -16,6 +17,8 @@ export const ALERT_CONFIG: Record<AlertType, { icon: string; color: string }> = 
   cancelled:   { icon: "✕",  color: "#FF3B30" },
   baggage:     { icon: "🧳", color: "#0A84FF" },
   atc:         { icon: "🗼", color: "#FF3B30" },
+  checkin:     { icon: "📋", color: "#0A84FF" },
+  morning:     { icon: "☀️", color: "#34C759" },
 };
 
 export interface FlightAlert {
@@ -201,6 +204,34 @@ export function useFlightAlerts(flights: Flight[], savedCallsigns: Set<string>) 
           timestamp: Date.now(),
           read: false,
         });
+      }
+
+      // Check-in reminder: fire once when check-in window opens
+      if (f.scheduledDep && isCheckinOpen(f.scheduledDep)) {
+        const checkinKey = `skyway_checkin_${f.id}`;
+        if (!localStorage.getItem(checkinKey)) {
+          const checkinUrl = getCheckinUrl(f.airline.code);
+          const cfg = ALERT_CONFIG.checkin;
+          batch.push({
+            id: `${f.id}-checkin-${Date.now()}`,
+            flightId: f.id,
+            flightNumber: f.flightNumber,
+            airlineCode: f.airline.code,
+            airlineColor: f.airline.color,
+            origin: f.origin.code,
+            destination: f.destination.code,
+            type: "checkin",
+            title: "Check In is now open",
+            body: checkinUrl
+              ? `Check in at ${f.airline.name}`
+              : `${f.flightNumber} · Check-in available`,
+            color: cfg.color,
+            icon: cfg.icon,
+            timestamp: Date.now(),
+            read: false,
+          });
+          try { localStorage.setItem(checkinKey, "1"); } catch {}
+        }
       }
 
       snapshotsRef.current.set(f.id, {

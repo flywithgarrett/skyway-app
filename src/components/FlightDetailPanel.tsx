@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Flight } from "@/lib/types";
-import { FlightDetail, useDelayPrediction, DelayPrediction } from "@/lib/api";
+import { FlightDetail, useDelayPrediction, DelayPrediction, useAirportWeather, AirportWeather } from "@/lib/api";
+import { weatherInfo, isCheckinOpen, getCheckinUrl } from "@/lib/checkin";
 
 interface FlightDetailPanelProps {
   flight: Flight;
@@ -203,6 +204,35 @@ function RouteVisualization({ flight, detail }: { flight: Flight; detail: Flight
   );
 }
 
+function WeatherCard({ airport, weather }: { airport: string; weather: AirportWeather }) {
+  const { icon, label } = weatherInfo(weather.weatherCode);
+  const severe = weather.weatherCode >= 61 || weather.windMph >= 30 || weather.visibility < 3;
+  return (
+    <div style={{
+      flex: 1, padding: "12px 14px", borderRadius: 12,
+      background: severe ? "rgba(255,149,0,0.08)" : "rgba(255,255,255,0.04)",
+      border: `1px solid ${severe ? "rgba(255,149,0,0.20)" : S.border}`,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{airport}</span>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        {weather.temp}°<span style={{ fontSize: 13, fontWeight: 500, color: S.dim }}>F</span>
+      </div>
+      <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: 10, color: S.faint, marginTop: 2 }}>
+        Wind {weather.windMph} mph · Vis {weather.visibility} km
+      </div>
+      {severe && (
+        <div style={{ fontSize: 10, fontWeight: 600, color: S.amber, marginTop: 4 }}>
+          ⚠ Weather advisory
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LiveStatsRow({ flight }: { flight: Flight }) {
   const ete = computeETE(flight);
   const stats = [
@@ -376,6 +406,10 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
   const arrLat = detail?.destination?.lat || 0;
   const arrLng = detail?.destination?.lng || 0;
   const { prediction } = useDelayPrediction(flight.callsign || null, registration, depLat, depLng, arrLat, arrLng);
+  const depWeather = useAirportWeather(depLat, depLng);
+  const arrWeather = useAirportWeather(arrLat, arrLng);
+  const checkinOpen = isCheckinOpen(flight.scheduledDep);
+  const checkinUrl = getCheckinUrl(flight.airline.code);
 
   return (
     <div style={{
@@ -452,6 +486,58 @@ export default function FlightDetailPanel({ flight, detail, onClose, onShowOnMap
           <div style={{ paddingTop: 20 }}>
             <RouteVisualization flight={flight} detail={detail} />
           </div>
+
+          {/* ══ Weather at Airports ══ */}
+          {(depWeather || arrWeather) && (
+            <div style={{ display: "flex", gap: 8, padding: "0 20px 16px" }}>
+              {depWeather && (
+                <WeatherCard
+                  airport={flight.origin.code !== "---" ? flight.origin.code : "DEP"}
+                  weather={depWeather}
+                />
+              )}
+              {arrWeather && (
+                <WeatherCard
+                  airport={flight.destination.code !== "---" ? flight.destination.code : "ARR"}
+                  weather={arrWeather}
+                />
+              )}
+            </div>
+          )}
+
+          {/* ══ Check-in Reminder ══ */}
+          {checkinOpen && (
+            <div style={{ padding: "0 20px 16px" }}>
+              <div style={{
+                background: "rgba(10,132,255,0.10)",
+                border: "1px solid rgba(10,132,255,0.25)",
+                borderRadius: 14, padding: "14px 16px",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "#0A84FF" }}>Check In is now open</div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
+                    You can check-in at {flight.airline.name}
+                  </div>
+                </div>
+                {checkinUrl && (
+                  <a
+                    href={checkinUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      background: "#0A84FF", color: "#fff",
+                      padding: "8px 14px", borderRadius: 10,
+                      fontSize: 13, fontWeight: 600, textDecoration: "none",
+                      flexShrink: 0,
+                    }}
+                  >
+                    Check In
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ══ SECTION 3 — Live Stats ══ */}
           {flight.status === "en-route" && <LiveStatsRow flight={flight} />}

@@ -202,3 +202,32 @@ export function useDelayPrediction(
 
   return { prediction, loading };
 }
+
+// --- Airport Weather (on-demand per flight detail) ---
+
+export interface AirportWeather {
+  temp: number;
+  weatherCode: number;
+  windMph: number;
+  visibility: number;
+}
+
+export function useAirportWeather(lat: number, lng: number) {
+  const [weather, setWeather] = useState<AirportWeather | null>(null);
+
+  useEffect(() => {
+    if (!lat || !lng) return;
+    let cancelled = false;
+
+    fetch(`/api/weather?lat=${lat}&lng=${lng}`)
+      .then(async (res) => {
+        if (cancelled || !res.ok) return;
+        setWeather(await res.json());
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [lat, lng]);
+
+  return weather;
+}
