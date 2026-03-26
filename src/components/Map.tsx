@@ -53,77 +53,88 @@ function isGroundTraffic(f: Flight): boolean {
   return f.onGround || (f.altitude > 0 && f.altitude < 300 && f.speed < 30);
 }
 
-/* ── Grid-based density limiting with minimum spacing per zoom ── */
+/* ── Pixel-based density limiting ── */
+// Constant minimum pixel gap between icon centers on screen.
+// At any zoom, we compute how many degrees = MIN_PIXEL_GAP pixels,
+// accounting for latitude compression (Mercator).
+const MIN_PIXEL_GAP = 32; // pixels between icon centers
+
+function degreesPerPixel(zoom: number, latitude: number): { dLat: number; dLng: number } {
+  // At zoom z, the world is 256 * 2^z pixels wide
+  const scale = 256 * Math.pow(2, zoom);
+  const dLng = 360 / scale; // degrees per pixel in longitude
+  const dLat = 360 / (scale * Math.max(0.3, Math.cos(latitude * Math.PI / 180))); // adjusted for latitude
+  return { dLat, dLng };
+}
+
 function getVisibleFlights(
   allFlights: Flight[],
   effectiveZoom: number,
   bounds: { north: number; south: number; east: number; west: number } | null,
 ): Flight[] {
-  const zoom = Math.round(effectiveZoom);
+  const zoom = effectiveZoom;
 
   // Separate airborne vs ground
   const airborne = allFlights.filter(f => !isGroundTraffic(f));
   const ground = allFlights.filter(f => isGroundTraffic(f));
 
-  // Minimum spacing in degrees between any two icons.
-  // At low zoom, space far apart. At high zoom, show everything.
-  const minSpacing = zoom < 4  ? 3.0  :
-                     zoom < 5  ? 2.0  :
-                     zoom < 6  ? 1.0  :
-                     zoom < 7  ? 0.5  :
-                     zoom < 8  ? 0.25 :
-                     zoom < 9  ? 0.12 :
-                     zoom < 10 ? 0.06 :
-                     zoom < 11 ? 0.03 :
-                     zoom < 12 ? 0.01 : 0;
+  // At zoom 12+, show everything (no spacing needed — airport level)
+  if (zoom >= 12) {
+    const inView = bounds
+      ? [...airborne, ...ground].filter(f => inBounds(f, bounds))
+      : [...airborne, ...ground];
+    return inView;
+  }
 
   const spaceFlights = (flights: Flight[]): Flight[] => {
-    if (minSpacing === 0) {
-      // Zoom 12+: show everything in bounds
-      if (!bounds) return flights;
-      return flights.filter(f => inBounds(f, bounds));
-    }
-
-    // Sort by altitude descending — higher flights take priority (more interesting)
+    // Sort by altitude descending — higher flights take priority
     const sorted = [...flights].sort((a, b) => b.altitude - a.altitude);
     const selected: Flight[] = [];
-    const occupied: { lat: number; lng: number }[] = [];
+    // Use a grid for O(1) proximity checks instead of O(n) linear scan
+    const gridCells = new Map<string, boolean>();
+
+    // Compute spacing in degrees at the center of the viewport
+    const centerLat = bounds ? (bounds.north + bounds.south) / 2 : 35;
+    const { dLat, dLng } = degreesPerPixel(zoom, centerLat);
+    const spacingLat = dLat * MIN_PIXEL_GAP;
+    const spacingLng = dLng * MIN_PIXEL_GAP;
 
     for (const f of sorted) {
       const lat = f.currentLat;
       const lng = f.currentLng;
 
-      // Skip if outside current viewport (when bounds available)
-      if (bounds && !inBounds(f, bounds)) continue;
+      // At zoom >= 5, skip if outside viewport
+      if (zoom >= 5 && bounds && !inBounds(f, bounds)) continue;
 
-      // Skip if too close to an already-selected flight
+      // Grid cell for this flight
+      const cellX = Math.floor(lng / spacingLng);
+      const cellY = Math.floor(lat / spacingLat);
+      const cellKey = `${cellX},${cellY}`;
+
+      // Check this cell and 8 neighbors for conflicts
       let tooClose = false;
-      for (const pos of occupied) {
-        if (Math.abs(pos.lat - lat) < minSpacing && Math.abs(pos.lng - lng) < minSpacing) {
-          tooClose = true;
-          break;
+      for (let dx = -1; dx <= 1 && !tooClose; dx++) {
+        for (let dy = -1; dy <= 1 && !tooClose; dy++) {
+          if (gridCells.has(`${cellX + dx},${cellY + dy}`)) {
+            tooClose = true;
+          }
         }
       }
 
       if (!tooClose) {
         selected.push(f);
-        occupied.push({ lat, lng });
+        gridCells.set(cellKey, true);
       }
     }
     return selected;
   };
 
-  // Globe view: include all airborne (spacing handles density)
+  // Globe view (zoom < 5): space all airborne flights globally
   if (zoom < 5) {
     return spaceFlights(airborne);
   }
 
-  // Zoom 12+: show ground aircraft too
-  if (zoom >= 12) {
-    return [...spaceFlights(airborne), ...spaceFlights(ground)];
-  }
-
-  // Mid zoom: airborne only with spacing
+  // Mid zoom (5-11): space airborne only
   return spaceFlights(airborne);
 }
 
