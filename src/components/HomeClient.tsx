@@ -228,6 +228,18 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
             setDetailFlight(null);
             setActiveTab("map");
           }}
+          isSaved={isSaved(detailFlight.callsign)}
+          onSave={user ? () => saveFlight({
+            callsign: detailFlight.callsign,
+            flightNumber: detailFlight.flightNumber,
+            airlineCode: detailFlight.airline.code,
+            airlineName: detailFlight.airline.name,
+            originCode: detailFlight.origin.code,
+            destinationCode: detailFlight.destination.code,
+            aircraftType: detailFlight.aircraft || undefined,
+            registration: detailFlight.registration || undefined,
+          }) : () => setAuthOpen(true)}
+          onUnsave={() => unsaveFlight(detailFlight.callsign)}
         />
       )}
 
