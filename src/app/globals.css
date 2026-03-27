@@ -2,6 +2,13 @@
 
 /* ═══ Forced Base Styles — override Tailwind preflight ═══ */
 
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
 html, body {
   background: #0A0A0F !important;
   color: #FFFFFF !important;
@@ -10,6 +17,22 @@ html, body {
   -moz-osx-font-smoothing: grayscale !important;
   margin: 0 !important;
   padding: 0 !important;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  position: fixed;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.scroll-container {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: scroll;
 }
 
 /* ═══ Flighty Design Tokens ═══ */
@@ -300,20 +323,64 @@ canvas {
 
 /* ═══ Mobile Responsive ═══ */
 
-@media (max-width: 640px) {
-  /* Hide stats panel on mobile — it overlaps ATC and map */
+@media (max-width: 768px) {
+  /* Hide desktop stats panel on mobile */
   #stats-panel {
     display: none !important;
   }
 
-  /* Make ATC panel full-width on mobile */
+  /* ATC panel full-width on mobile */
   #atc-panel {
     left: 0 !important;
     right: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    border-radius: 0 !important;
-    top: 52px !important;
+    border-radius: 20px 20px 0 0 !important;
+    top: auto !important;
     bottom: 68px !important;
+    max-height: 60vh !important;
   }
+
+  /* Hide desktop-only elements */
+  .desktop-only { display: none !important; }
+}
+
+@media (min-width: 769px) {
+  .mobile-only { display: none !important; }
+}
+
+/* ═══ iOS Type Scale ═══ */
+.text-large-title { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+.text-title1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.text-title2 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.text-title3 { font-size: 20px; font-weight: 600; }
+.text-headline { font-size: 17px; font-weight: 600; }
+.text-body { font-size: 17px; font-weight: 400; }
+.text-callout { font-size: 16px; font-weight: 400; }
+.text-subhead { font-size: 15px; font-weight: 400; }
+.text-footnote { font-size: 13px; font-weight: 400; }
+.text-caption { font-size: 12px; font-weight: 400; }
+
+/* ═══ Bottom Sheet ═══ */
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.bottom-sheet-backdrop {
+  position: fixed; inset: 0; z-index: 45;
+  background: rgba(0,0,0,0.5);
+  transition: opacity 0.3s ease;
+}
+
+.bottom-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: rgba(17,17,24,0.98);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-radius: 20px 20px 0 0;
+  padding-bottom: var(--safe-bottom);
+  animation: sheetSlideUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: height 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.4);
 }

@@ -32,6 +32,25 @@ export default function FlightListSidebar({ flights }: AviationStatsProps) {
   ];
 
   return (
+    <>
+    {/* Mobile stats pill */}
+    <div className="mobile-only" style={{
+      position: "fixed", top: 60, left: "50%", transform: "translateX(-50%)",
+      zIndex: 100, pointerEvents: "auto",
+      background: "rgba(0,0,0,0.65)",
+      backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+      borderRadius: 20, padding: "6px 16px",
+      display: "flex", alignItems: "center", gap: 8,
+      border: "1px solid rgba(255,255,255,0.08)",
+    }}>
+      <div style={{ width: 6, height: 6, borderRadius: 3, background: "#34C759" }} />
+      <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+        {stats.airborne.toLocaleString()}
+      </span>
+      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>airborne</span>
+    </div>
+
+    {/* Desktop stats panel */}
     <div id="stats-panel" style={{
       position: "fixed", top: 64, left: 16,
       background: "rgba(17,17,24,0.88)",
@@ -104,5 +123,6 @@ export default function FlightListSidebar({ flights }: AviationStatsProps) {
         </div>
       )}
     </div>
+    </>
   );
 }

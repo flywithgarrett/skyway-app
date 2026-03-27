@@ -16,8 +16,9 @@ export default function TopBar({ totalFlights, enRouteCount, onSearchOpen, selec
   return (
     <nav style={{
       position: "fixed", top: 0, left: 0, right: 0,
-      height: 52, zIndex: 1000,
-      background: "rgba(10,10,15,0.90)",
+      height: 52,
+      paddingTop: "env(safe-area-inset-top, 0px)",
+      background: "rgba(10,10,15,0.92)",
       backdropFilter: "blur(20px) saturate(180%)",
       WebkitBackdropFilter: "blur(20px) saturate(180%)",
       borderBottom: "1px solid rgba(255,255,255,0.08)",
@@ -37,9 +38,10 @@ export default function TopBar({ totalFlights, enRouteCount, onSearchOpen, selec
         SkyWay
       </span>
 
-      {/* Search bar */}
+      {/* Search bar — full on desktop, icon on mobile */}
       <div
         onClick={onSearchOpen}
+        className="desktop-only"
         style={{
           flex: 1, maxWidth: 360,
           background: "rgba(255,255,255,0.07)",
@@ -55,6 +57,22 @@ export default function TopBar({ totalFlights, enRouteCount, onSearchOpen, selec
         </svg>
         Search flights, airports...
       </div>
+      {/* Mobile search icon */}
+      <div style={{ flex: 1 }} className="mobile-only" />
+      <button
+        onClick={onSearchOpen}
+        className="mobile-only"
+        style={{
+          background: "rgba(255,255,255,0.07)", border: "none",
+          borderRadius: 10, width: 36, height: 36, cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "rgba(255,255,255,0.55)",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+      </button>
 
       {/* Right side */}
       {selectedFlight ? (

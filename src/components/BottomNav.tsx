@@ -25,7 +25,9 @@ export default function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
       WebkitBackdropFilter: "blur(24px) saturate(180%)",
       borderTop: "1px solid rgba(255,255,255,0.08)",
       display: "flex", alignItems: "center",
-      justifyContent: "space-around", padding: "0 8px",
+      justifyContent: "space-around",
+      padding: "0 8px",
+      paddingBottom: "env(safe-area-inset-bottom, 0px)",
       fontFamily: "-apple-system, 'SF Pro Text', system-ui, sans-serif",
     }}>
       {tabs.map((tab) => {
