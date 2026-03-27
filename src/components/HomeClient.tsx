@@ -75,7 +75,6 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [uiVisible] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
   const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
@@ -200,29 +199,15 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         </div>
       )}
 
-      <div style={{
-        opacity: uiVisible ? 1 : 0,
-        transform: uiVisible ? "translateY(0)" : "translateY(-10px)",
-        transition: "opacity 0.4s ease, transform 0.4s ease",
-        transitionDelay: "0ms",
-      }}>
-        <TopBar
-          totalFlights={flights.length}
-          enRouteCount={flights.length}
-          onSearchOpen={() => setSearchOpen(true)}
-          selectedFlight={enrichedSelectedFlight}
-        />
-      </div>
+      <TopBar
+        totalFlights={flights.length}
+        enRouteCount={flights.length}
+        onSearchOpen={() => setSearchOpen(true)}
+        selectedFlight={enrichedSelectedFlight}
+      />
 
       {/* Left sidebar — aviation stats */}
-      <div style={{
-        opacity: uiVisible ? 1 : 0,
-        transform: uiVisible ? "translateX(0)" : "translateX(-10px)",
-        transition: "opacity 0.4s ease, transform 0.4s ease",
-        transitionDelay: "100ms",
-      }}>
-        {activeTab === "map" && <FlightListSidebar flights={flights} />}
-      </div>
+      {activeTab === "map" && <FlightListSidebar flights={flights} />}
 
       {activeTab === "map" && enrichedSelectedFlight && !detailFlight && (
         <Panel
@@ -361,14 +346,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
         />
       )}
 
-      <div style={{
-        opacity: uiVisible ? 1 : 0,
-        transform: uiVisible ? "translateY(0)" : "translateY(10px)",
-        transition: "opacity 0.4s ease, transform 0.4s ease",
-        transitionDelay: "200ms",
-      }}>
-        <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
-      </div>
+      <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* Auth modal */}
       {authOpen && (
