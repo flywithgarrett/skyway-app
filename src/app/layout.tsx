@@ -39,7 +39,7 @@ export default function RootLayout({
             font-family: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif !important;
             -webkit-font-smoothing: antialiased !important;
             margin: 0 !important; padding: 0 !important;
-            overflow: hidden; height: 100%; width: 100%; position: fixed;
+            overflow: hidden; height: 100%; width: 100%;
           }
           * { -webkit-font-smoothing: antialiased; box-sizing: border-box;
               -webkit-tap-highlight-color: transparent; }
@@ -48,7 +48,7 @@ export default function RootLayout({
       <body style={{
         background: "#0A0A0F", color: "#FFFFFF",
         fontFamily: "-apple-system, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif",
-        margin: 0, height: "100%", width: "100%", overflow: "hidden", position: "fixed",
+        margin: 0, height: "100%", width: "100%", overflow: "hidden",
       }}>
         <ErrorBoundary>{children}</ErrorBoundary>
       </body>

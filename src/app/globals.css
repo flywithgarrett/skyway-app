@@ -18,11 +18,9 @@ html, body {
   margin: 0 !important;
   padding: 0 !important;
   overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
-  overflow: hidden;
   height: 100%;
   width: 100%;
-  position: fixed;
+  overflow: hidden;
 }
 
 * {
