@@ -79,7 +79,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
 
   // Auth + saved flights
-  const { user, signInWithEmail, signUpWithEmail, signOut } = useAuth();
+  const { user, signInWithEmail, signUpWithEmail, signInWithOAuth, resetPassword, signOut } = useAuth();
   const { savedFlights, saveFlight, unsaveFlight, isSaved } = useSavedFlights(user?.id ?? null);
 
   // ATC feed state
@@ -351,6 +351,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           onClose={() => setAuthOpen(false)}
           onSignIn={signInWithEmail}
           onSignUp={signUpWithEmail}
+          onOAuth={signInWithOAuth}
+          onResetPassword={resetPassword}
         />
       )}
 

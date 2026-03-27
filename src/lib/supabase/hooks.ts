@@ -36,12 +36,27 @@ export function useAuth() {
     return { error: error?.message || null };
   }, [supabase.auth]);
 
+  const signInWithOAuth = useCallback(async (provider: "google" | "apple") => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/api/auth/callback` },
+    });
+    return { error: error?.message || null };
+  }, [supabase.auth]);
+
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}`,
+    });
+    return { error: error?.message || null };
+  }, [supabase.auth]);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
   }, [supabase.auth]);
 
-  return { user, loading, signInWithEmail, signUpWithEmail, signOut };
+  return { user, loading, signInWithEmail, signUpWithEmail, signInWithOAuth, resetPassword, signOut };
 }
 
 // ═══ Saved Flights Hook ═══
