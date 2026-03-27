@@ -358,14 +358,29 @@ export default function FlightMap({ flights, airports, selectedFlight, onSelectF
         setMapReady(true);
 
         // Globe spin + snap to US on every load
-        setTimeout(() => {
-          if (map3d.flyCameraTo) {
-            map3d.flyCameraTo({
-              endCamera: HOME_CAMERA,
-              durationMillis: 4000,
-            });
+        // Use both a timeout and a ready check to ensure the camera API is available
+        const flyToUS = () => {
+          try {
+            if (map3d.flyCameraTo) {
+              map3d.flyCameraTo({
+                endCamera: HOME_CAMERA,
+                durationMillis: 4000,
+              });
+            } else {
+              // Fallback: set camera directly
+              map3d.center = HOME_CAMERA.center;
+              map3d.range = HOME_CAMERA.range;
+              map3d.tilt = HOME_CAMERA.tilt;
+              map3d.heading = HOME_CAMERA.heading;
+            }
+          } catch (e) {
+            console.warn("flyCameraTo failed:", e);
           }
-        }, 1200);
+        };
+        // Try after a delay to let the 3D renderer initialize
+        setTimeout(flyToUS, 800);
+        // Also try again after a longer delay in case the first attempt was too early
+        setTimeout(flyToUS, 2500);
 
       } catch (err) {
         console.warn("3D failed, using 2D:", err);
