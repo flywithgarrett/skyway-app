@@ -156,7 +156,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   };
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100vh", overflow: "hidden", background: "#0A0A0F" }}>
+    <div style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#0A0A0F" }}>
       {/* Loading screen */}
       <LoadingScreen />
 
