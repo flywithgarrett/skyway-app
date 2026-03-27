@@ -74,6 +74,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [detailFlight, setDetailFlight] = useState<Flight | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
   const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
@@ -290,6 +291,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
           onMarkAllRead={markAllRead}
           unreadCount={unreadCount}
           onAddFlight={() => { setActiveTab("map"); setSearchOpen(true); }}
+          isSignedIn={!!user}
+          onSignIn={() => setAuthOpen(true)}
         />
       )}
 
@@ -359,20 +362,52 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
       {/* User account button — inside top nav bar */}
       <div style={{ position: "fixed", top: 10, right: 16, zIndex: 1001 }}>
         {user ? (
-          <button
-            onClick={signOut}
-            style={{
-              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 10, padding: "6px 12px", cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
-              fontSize: 11, color: "rgba(255,255,255,0.55)", fontWeight: 500,
-            }}
-          >
-            <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#0A84FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff" }}>
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "#0A84FF", border: "none", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14, fontWeight: 700, color: "#fff",
+              }}
+            >
               {(user.email || "U")[0].toUpperCase()}
-            </div>
-            Sign Out
-          </button>
+            </button>
+
+            {/* Dropdown menu */}
+            {userMenuOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: -1 }} onClick={() => setUserMenuOpen(false)} />
+                <div style={{
+                  position: "absolute", top: 40, right: 0, width: 200,
+                  background: "rgba(28,28,40,0.96)",
+                  backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 14, padding: "6px",
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+                }}>
+                  {[
+                    { label: "My Flights", action: () => { setActiveTab("flights"); setUserMenuOpen(false); } },
+                    { label: "Alerts", action: () => { setActiveTab("alerts"); setUserMenuOpen(false); } },
+                    { label: "Airports", action: () => { setActiveTab("airports"); setUserMenuOpen(false); } },
+                  ].map(item => (
+                    <button key={item.label} onClick={item.action} style={{
+                      width: "100%", textAlign: "left", padding: "10px 14px",
+                      background: "none", border: "none", borderRadius: 8,
+                      color: "#fff", fontSize: 14, cursor: "pointer",
+                    }}>{item.label}</button>
+                  ))}
+                  <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 10px" }} />
+                  <button onClick={() => { signOut(); setUserMenuOpen(false); }} style={{
+                    width: "100%", textAlign: "left", padding: "10px 14px",
+                    background: "none", border: "none", borderRadius: 8,
+                    color: "#FF3B30", fontSize: 14, cursor: "pointer",
+                  }}>Sign Out</button>
+                </div>
+              </>
+            )}
+          </div>
         ) : (
           <button
             onClick={() => setAuthOpen(true)}

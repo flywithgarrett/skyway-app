@@ -15,6 +15,8 @@ interface AlertsViewProps {
   onMarkAllRead?: () => void;
   unreadCount?: number;
   onAddFlight?: () => void;
+  isSignedIn?: boolean;
+  onSignIn?: () => void;
 }
 
 // ═══ Helpers ═══
@@ -257,6 +259,7 @@ export default function AlertsView({
   onSelectFlight, onSwitchToMap,
   flightAlerts = [], atcAdvisories = [], atcLastUpdated,
   onMarkRead, onMarkAllRead, unreadCount = 0, onAddFlight,
+  isSignedIn = true, onSignIn,
 }: AlertsViewProps) {
   const { active, past24h } = useMemo(() => getEmergencyFlights(), []);
 
@@ -300,8 +303,29 @@ export default function AlertsView({
           )}
         </div>
 
-        {/* ── Empty state ── */}
-        {!hasContent && <EmptyState onAddFlight={onAddFlight} />}
+        {/* ── Sign-in prompt ── */}
+        {!isSignedIn && (
+          <div style={{ textAlign: "center", padding: "40px 24px" }}>
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#0A84FF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 20px", display: "block" }}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>Stay Informed</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", marginTop: 10, maxWidth: 280, margin: "10px auto 24px", lineHeight: 1.5 }}>
+              Sign in to get real-time alerts for gate changes, delays, and ATC advisories.
+            </div>
+            {onSignIn && (
+              <button onClick={onSignIn} style={{
+                background: "#0A84FF", border: "none", borderRadius: 14,
+                padding: "14px 32px", color: "#fff", fontSize: 16, fontWeight: 600, cursor: "pointer",
+                width: "100%", maxWidth: 280,
+              }}>Sign In</button>
+            )}
+          </div>
+        )}
+
+        {/* ── Empty state (signed in, no alerts) ── */}
+        {isSignedIn && !hasContent && <EmptyState onAddFlight={onAddFlight} />}
 
         {/* ── ATC Advisories ── */}
         {atcAdvisories.length > 0 && (
