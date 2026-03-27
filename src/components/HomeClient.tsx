@@ -12,7 +12,6 @@ import AlertsView from "@/components/AlertsView";
 import NotificationToast from "@/components/NotificationToast";
 import AuthModal from "@/components/AuthModal";
 import LoadingScreen from "@/components/LoadingScreen";
-import AirplaneWindowIntro from "@/components/AirplaneWindowIntro";
 import SatelliteView from "@/components/SatelliteView";
 import PlaceholderView from "@/components/PlaceholderView";
 import MyFlightsView from "@/components/MyFlightsView";
@@ -76,11 +75,7 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [introSeen] = useState(() => {
-    try { return sessionStorage.getItem("skyway_intro_seen") === "true"; } catch { return false; }
-  });
-  const [introComplete, setIntroComplete] = useState(introSeen);
-  const [uiVisible, setUiVisible] = useState(introSeen);
+  const [uiVisible] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("map");
   const [flyToISS, setFlyToISS] = useState(false);
   const [flyToAirport, setFlyToAirport] = useState<Airport | null>(null);
@@ -162,16 +157,8 @@ export default function HomeClient({ initialFlights }: HomeClientProps) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100vh", overflow: "hidden", background: "#0A0A0F" }}>
-      {/* Cinematic airplane window intro (first load per session) */}
-      {!introComplete && (
-        <AirplaneWindowIntro onComplete={() => {
-          setIntroComplete(true);
-          // Stagger UI fade-in after globe camera settles (~2s)
-          setTimeout(() => setUiVisible(true), 2000);
-        }} />
-      )}
-      {/* Fallback loading screen for return visits */}
-      {introSeen && <LoadingScreen />}
+      {/* Loading screen */}
+      <LoadingScreen />
 
       {/* Atmosphere glow — centered ellipse behind globe */}
       <div style={{
